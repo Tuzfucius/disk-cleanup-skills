@@ -1,5 +1,7 @@
 # disk-cleanup-skills
 
+[English README](README.en.md)
+
 面向 Windows 的两阶段磁盘审查与安全清理 Skill。第一阶段使用 WizTree 建立磁盘索引并生成候选项；第二阶段只根据同一任务中的 candidate_id 生成不可变计划，经用户明确确认后将文件移入 Windows 回收站。
 
 ## 安全边界
