@@ -1,0 +1,44 @@
+[[rule]]
+id = "user-temp"
+category = "known_cache"
+path_regex = "(?i)\\\\AppData\\\\Local\\\\Temp(\\\\|$)"
+risk = "low"
+confidence = 0.92
+backend = "file"
+action = "recycle_known_temp_files"
+default_selectable = true
+evidence = "用户临时文件目录，可再生成，仍需预览确认。"
+
+[[rule]]
+id = "npm-cache"
+category = "package_cache"
+path_regex = "(?i)\\\\npm-cache(\\\\|$)"
+risk = "low"
+confidence = 0.9
+backend = "file"
+action = "recycle_package_cache"
+default_selectable = true
+evidence = "npm 包缓存目录，可由包管理器重新下载。"
+
+[[rule]]
+id = "jetbrains-cache"
+category = "ide_cache"
+path_regex = "(?i)\\\\AppData\\\\Local\\\\JetBrains\\\\[^\\\\]+\\\\(caches|index|log|tmp)(\\\\|$)"
+risk = "medium"
+confidence = 0.78
+backend = "file"
+action = "review_then_recycle_cache"
+default_selectable = false
+evidence = "JetBrains 明确的缓存、索引、日志或临时子目录；应用根、配置和插件不匹配。"
+
+[[rule]]
+id = "vscode-cache"
+category = "ide_cache"
+path_regex = "(?i)\\\\\\.vscode\\\\(Cache|CachedData|logs|User\\\\workspaceStorage)(\\\\|$)"
+risk = "medium"
+confidence = 0.74
+backend = "file"
+action = "review_then_recycle_cache"
+default_selectable = false
+evidence = "VS Code 缓存、日志或工作区缓存目录。"
+

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.disk-cleanup-skills/agent-context.schema.json",
+  "title": "agent context",
+  "type": "object",
+  "required": ["scan_id", "generated_at", "top_candidates", "policy"],
+  "additionalProperties": true,
+  "properties": {
+    "scan_id": { "type": "integer", "minimum": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "top_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "path", "size_bytes", "score", "rule_name", "risk_level"],
+        "additionalProperties": true,
+        "properties": {
+          "candidate_id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "score": { "type": "number" },
+          "rule_name": { "type": "string", "minLength": 1 },
+          "risk_level": { "type": "string", "enum": ["low", "medium", "high"] }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["model_may_execute_commands", "browser_may_submit_paths", "execution_requires_preview", "execution_requires_confirmation"],
+      "additionalProperties": false,
+      "properties": {
+        "model_may_execute_commands": { "type": "boolean" },
+        "browser_may_submit_paths": { "type": "boolean" },
+        "execution_requires_preview": { "type": "boolean" },
+        "execution_requires_confirmation": { "type": "boolean" }
+      }
+    }
+  }
+}

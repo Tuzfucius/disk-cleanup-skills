@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "disk-cleanup-skills"
+version = "0.1.0"
+description = "本地磁盘审计与交互式清理 Skill 套件"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+disk-cleanup = "disk_cleanup.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+disk_cleanup = ["web/static/*.html", "web/static/*.css", "web/static/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

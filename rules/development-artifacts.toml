@@ -1,0 +1,33 @@
+[[rule]]
+id = "python-pycache"
+category = "development_artifact"
+path_regex = "(?i)\\\\__pycache__(\\\\|$)"
+risk = "low"
+confidence = 0.96
+backend = "file"
+action = "recycle_build_artifacts"
+default_selectable = true
+evidence = "Python 字节码缓存，可自动再生成。"
+
+[[rule]]
+id = "node-modules"
+category = "development_artifact"
+path_regex = "(?i)\\\\node_modules(\\\\|$)"
+risk = "medium"
+confidence = 0.72
+backend = "file"
+action = "review_then_recycle_dependencies"
+default_selectable = false
+evidence = "Node 依赖目录，通常可重装，但可能影响离线开发。"
+
+[[rule]]
+id = "build-output"
+category = "development_artifact"
+path_regex = "(?i)\\\\(build|dist|target|\\.next|\\.vite|\\.pytest_cache)(\\\\|$)"
+risk = "medium"
+confidence = 0.76
+backend = "file"
+action = "review_then_recycle_build_outputs"
+default_selectable = false
+evidence = "常见构建或测试缓存输出，需要确认项目状态后清理。"
+

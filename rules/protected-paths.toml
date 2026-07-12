@@ -1,0 +1,28 @@
+[[path]]
+pattern = "(?i)^[A-Z]:\\\\Windows(\\\\|$)"
+reason = "Windows 系统目录"
+
+[[path]]
+pattern = "(?i)^[A-Z]:\\\\Program Files( \\(x86\\))?(\\\\|$)"
+reason = "已安装程序目录"
+
+[[path]]
+pattern = "(?i)^[A-Z]:\\\\ProgramData(\\\\|$)"
+reason = "共享程序数据目录，默认只允许明确低风险子项"
+
+[[path]]
+pattern = "(?i)^[A-Z]:\\\\System Volume Information(\\\\|$)"
+reason = "系统卷信息"
+
+[[path]]
+pattern = "(?i)^[A-Z]:\\\\Recovery(\\\\|$)"
+reason = "系统恢复目录"
+
+[[path]]
+pattern = "(?i)^C:\\\\pagefile\\.sys$"
+reason = "系统分页文件"
+
+[[path]]
+pattern = "(?i)^C:\\\\hiberfil\\.sys$"
+reason = "系统休眠文件"
+

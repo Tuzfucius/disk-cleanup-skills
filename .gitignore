@@ -1,0 +1,48 @@
+# 本机配置和运行产物不提交
+config.local.toml
+
+# 本地扫描、索引、日志和报告
+.disk-cleanup-workspace/
+scans/
+sessions/
+plans/
+logs/
+reports/
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Python 缓存
+__pycache__/
+.pytest_cache/
+.pytest_tmp/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.playwright-cli/
+*.pyc
+*.pyo
+*.egg-info/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+
+# 本机工具、编辑器和环境配置
+.env
+.env.*
+.venv/
+venv/
+.idea/
+.vscode/
+
+# 本机扫描输入和导出
+*.wiztree.csv
+*.scan.csv
+wiztree-export*.csv
+*.log
+*.tmp
+*.bak

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.disk-cleanup-skills/cleanup-plan.schema.json",
+  "title": "cleanup plan",
+  "type": "object",
+  "required": ["plan_id", "scan_id", "created_at", "expected_reclaim_bytes", "actions", "plan_hash", "run_id", "expires_at"],
+  "additionalProperties": false,
+  "properties": {
+    "plan_id": { "type": "string", "minLength": 1 },
+    "scan_id": { "type": "integer", "minimum": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "expected_reclaim_bytes": { "type": "integer", "minimum": 0 },
+    "plan_hash": { "type": "string", "minLength": 32 },
+    "run_id": { "type": "string" },
+    "expires_at": { "type": "string" },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "node_id",
+          "backend",
+          "action_type",
+          "action_value",
+          "path",
+          "risk",
+          "expected_reclaim_bytes"
+          ,"volume_serial"
+          ,"file_id"
+          ,"modified_ns"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": { "type": "string", "pattern": "^C[0-9]{4,}$" },
+          "node_id": { "type": "integer", "minimum": 1 },
+          "backend": { "type": "string", "const": "file" },
+          "action_type": { "type": "string", "const": "recycle" },
+          "action_value": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+          "expected_reclaim_bytes": { "type": "integer", "minimum": 0 }
+          ,"volume_serial": { "type": ["integer", "null"] }
+          ,"file_id": { "type": ["integer", "null"] }
+          ,"modified_ns": { "type": ["integer", "null"] }
+        }
+      }
+    }
+  }
+}

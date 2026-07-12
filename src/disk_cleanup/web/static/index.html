@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>磁盘审计</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>磁盘审计</h1>
+        <p id="scan-meta">读取扫描结果中</p>
+      </div>
+      <div class="metric" id="candidate-total">候选项 0</div>
+    </header>
+
+    <main class="layout">
+      <section aria-labelledby="summary-title" class="panel summary">
+        <h2 id="summary-title">概览</h2>
+        <dl class="metrics">
+          <div><dt>文件</dt><dd id="files">-</dd></div>
+          <div><dt>目录</dt><dd id="folders">-</dd></div>
+          <div><dt>候选空间</dt><dd id="reclaimable">-</dd></div>
+          <div><dt>最大深度</dt><dd id="max-depth">-</dd></div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="tree-title" class="panel tree-panel">
+        <h2 id="tree-title">目录树</h2>
+        <div id="tree" class="tree" role="tree"></div>
+      </section>
+
+      <section aria-labelledby="candidate-title" class="panel candidate-panel">
+        <h2 id="candidate-title">候选项</h2>
+        <div id="candidates" class="candidate-list"></div>
+      </section>
+
+      <section aria-labelledby="cleanup-title" class="panel cleanup-panel">
+        <h2 id="cleanup-title">清理流程</h2>
+        <div class="toolbar">
+          <button id="preview-button" type="button">生成预览</button>
+          <button id="confirm-button" type="button" disabled>二次确认</button>
+          <button id="execute-button" type="button" disabled>执行计划</button>
+        </div>
+        <pre id="cleanup-output" class="output">尚未选择候选项。</pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
