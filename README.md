@@ -69,6 +69,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -M
 
 候选项会同时出现在命令输出和本地 HTML 报告中。报告展示最大目录与文件类型柱状图；勾选后点击“生成清理计划”，核对网页显示的精确路径和计划哈希，再在新一轮对话中说“执行删除勾选内容”。网页不会直接删除文件。
 
+![合成数据生成的报告与清理计划界面](assets/report-selection-demo.png)
+
 ### 第二阶段：计划与清理
 
 只选择审查结果中的候选 ID：

@@ -57,6 +57,8 @@ The command returns a `run_id`. Runtime data is stored under `LOCALAPPDATA\DiskC
 
 Candidates are shown in command output and the local HTML report. The report includes directory and file-type bar charts. Select candidates, use **Generate cleanup plan**, review the exact paths, then say `执行删除勾选内容` in a later chat turn. The page never deletes files.
 
+![Synthetic report and cleanup-plan interface](assets/report-selection-demo.png)
+
 ### Stage 2: Plan and Cleanup
 
 Select candidates only from the audit result:
