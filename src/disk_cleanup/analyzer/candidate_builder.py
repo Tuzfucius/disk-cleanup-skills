@@ -34,7 +34,11 @@ def analyze_scan(
     return AnalysisSummary(
         scan_id=scan_id,
         candidate_count=len(candidates),
-        reclaimable_bytes=sum(candidate.reclaimable_bytes for candidate in candidates),
+        reclaimable_bytes=sum(
+            candidate.reclaimable_bytes
+            for candidate in candidates
+            if candidate.risk in {"safe_cache", "safe_redownload"}
+        ),
         context_path=context_path,
     )
 
@@ -113,17 +117,21 @@ def stable_candidate_id(scan_id: int, node: sqlite3.Row, rule_id: str) -> str:
 
 def candidate_from_rule(scan_id: int, node: sqlite3.Row, rule: Rule) -> Candidate:
     reclaimable = int(node["subtree_allocated_bytes"])
+    path = str(node["full_path"])
+    is_temp_root = bool(__import__("re").search(r"(?i)\\AppData\\Local\\Temp\\?$", path))
+    risk = "review" if is_temp_root else rule.risk
+    selectable = False if is_temp_root else rule.default_selectable
     return Candidate(
         candidate_id=stable_candidate_id(scan_id, node, rule.id),
         node_id=int(node["id"]),
         title=str(node["name"]),
         category=rule.category,
         reclaimable_bytes=reclaimable,
-        risk=rule.risk,
+        risk=risk,
         confidence=rule.confidence,
         recommended_action="recycle",
         backend="file",
-        default_selectable=rule.default_selectable,
+        default_selectable=selectable,
         evidence=f"{rule.evidence} 路径: {node['full_path']}",
     )
 

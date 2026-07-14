@@ -29,6 +29,8 @@ def execute_plan(
     backend: RecycleBackend | None = None,
     audit_path: Path | None = None,
 ) -> dict[str, Any]:
+    if plan.allowed_root and __import__("os").path.normcase(plan.allowed_root) != __import__("os").path.normcase(allowed_root):
+        raise ValueError("计划绑定的扫描根与执行根不一致")
     recycler = backend or WindowsIFileOperationBackend()
     results: list[dict[str, Any]] = []
     moved = 0
@@ -49,9 +51,13 @@ def execute_plan(
             if adjacent != identity:
                 raise ValueError("目标在回收执行前发生变化")
             recycler.recycle(path)
-            status = "RECYCLED"
-            message = "已移入 Windows 回收站；空间需在清空回收站后才会释放。"
-            moved += action.expected_reclaim_bytes
+            if path.exists():
+                status = "UNKNOWN"
+                message = "回收站操作已返回，但原路径仍存在，不能视为成功。"
+            else:
+                status = "RECYCLED"
+                message = "已移入 Windows 回收站；空间需在清空回收站后才会释放。"
+                moved += action.expected_reclaim_bytes
         except ValueError as exc:
             status, message = "BLOCKED", str(exc)
         except OSError as exc:

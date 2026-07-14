@@ -17,6 +17,8 @@ reports/
 __pycache__/
 .pytest_cache/
 .pytest_tmp/
+.pytest_tmp*/
+.scan_test_workspace/
 .mypy_cache/
 .ruff_cache/
 .tox/

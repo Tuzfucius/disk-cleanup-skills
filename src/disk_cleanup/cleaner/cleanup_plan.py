@@ -32,6 +32,10 @@ def create_cleanup_plan(
     expires_at: str = "",
     persist: bool = True,
     now: datetime | None = None,
+    allowed_root: str = "",
+    scan_fingerprint: str = "",
+    rule_pack_hash: str = "",
+    scan_truncated: bool = False,
 ) -> CleanupPlan:
     normalized = normalize_candidate_ids(candidate_ids)
     if not normalized:
@@ -60,6 +64,8 @@ def create_cleanup_plan(
     if len(risks) != 1:
         raise CleanupPlanError("safe_cache 与 safe_redownload 必须生成独立审批批次")
     actions = tuple(action_from_candidate(row) for row in rows)
+    if scan_truncated and any(action.node_type == "directory" for action in actions):
+        raise CleanupPlanError("扫描结果不完整，禁止生成目录清理计划")
     clock = now or datetime.now(timezone.utc)
     created_at = clock.isoformat()
     approval_expires_at = (clock + timedelta(minutes=10)).isoformat()
@@ -70,6 +76,8 @@ def create_cleanup_plan(
         "plan_id": plan_id, "run_id": run_id, "expires_at": expires_at,
         "scan_id": scan_id, "created_at": created_at, "risk_batch": next(iter(risks)),
         "approval_expires_at": approval_expires_at,
+        "allowed_root": allowed_root, "scan_fingerprint": scan_fingerprint,
+        "rule_pack_hash": rule_pack_hash, "scan_truncated": scan_truncated,
         "actions": [asdict(action) for action in actions],
         "expected_reclaim_bytes": expected,
     }
@@ -79,6 +87,8 @@ def create_cleanup_plan(
         plan_hash=stable_hash(hash_input), run_id=run_id, expires_at=expires_at,
         risk_batch=next(iter(risks)), approval_expires_at=approval_expires_at,
         approval_code=approval_code,
+        allowed_root=allowed_root, scan_fingerprint=scan_fingerprint,
+        rule_pack_hash=rule_pack_hash, scan_truncated=scan_truncated,
     )
     if persist:
         persist_plan(db_path.parent, plan)
@@ -132,6 +142,8 @@ def plan_to_dict(plan: CleanupPlan, *, include_approval_code: bool = True) -> di
         "expected_reclaim_bytes": plan.expected_reclaim_bytes, "plan_hash": plan.plan_hash,
         "run_id": plan.run_id, "expires_at": plan.expires_at, "risk_batch": plan.risk_batch,
         "approval_expires_at": plan.approval_expires_at,
+        "allowed_root": plan.allowed_root, "scan_fingerprint": plan.scan_fingerprint,
+        "rule_pack_hash": plan.rule_pack_hash, "scan_truncated": plan.scan_truncated,
         "actions": [asdict(action) for action in plan.actions],
     }
     if include_approval_code:
@@ -210,6 +222,10 @@ def load_persisted_plan(task_root: Path, plan_hash: str) -> CleanupPlan:
         expires_at=str(payload.get("expires_at", "")),
         risk_batch=str(payload["risk_batch"]),
         approval_expires_at=str(payload["approval_expires_at"]), approval_code="",
+        allowed_root=str(payload.get("allowed_root", "")),
+        scan_fingerprint=str(payload.get("scan_fingerprint", "")),
+        rule_pack_hash=str(payload.get("rule_pack_hash", "")),
+        scan_truncated=bool(payload.get("scan_truncated", False)),
     )
 
 
@@ -221,6 +237,10 @@ def _verify_persisted_payload(payload: dict[str, Any], plan_hash: str) -> None:
         "expires_at": payload.get("expires_at", ""), "scan_id": payload["scan_id"],
         "created_at": payload["created_at"], "risk_batch": payload["risk_batch"],
         "approval_expires_at": payload["approval_expires_at"],
+        "allowed_root": payload.get("allowed_root", ""),
+        "scan_fingerprint": payload.get("scan_fingerprint", ""),
+        "rule_pack_hash": payload.get("rule_pack_hash", ""),
+        "scan_truncated": bool(payload.get("scan_truncated", False)),
         "actions": payload["actions"],
         "expected_reclaim_bytes": payload["expected_reclaim_bytes"],
     }

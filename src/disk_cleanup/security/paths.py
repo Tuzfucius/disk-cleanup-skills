@@ -8,6 +8,8 @@ from pathlib import Path
 
 DEVICE_PREFIXES = ("\\\\?\\", "\\\\.\\", "\\\\")
 RESERVED_ROOTS = {"windows", "program files", "program files (x86)", "programdata", "recovery", "system volume information"}
+PROTECTED_SEGMENTS = {"onedrive", "dropbox", "google drive", ".ssh"}
+PROTECTED_USER_FOLDERS = {"documents", "desktop", "pictures"}
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,11 @@ def assert_deletable(path_value: str, allowed_root: str, protected_roots: tuple[
     relative_parts = path.relative_to(Path(path.anchor)).parts
     if relative_parts and relative_parts[0].casefold() in RESERVED_ROOTS:
         raise ValueError("目标属于受保护的系统或应用根目录")
+    folded_parts = {part.casefold() for part in relative_parts}
+    if folded_parts & PROTECTED_SEGMENTS:
+        raise ValueError("目标属于云同步或凭据保护目录")
+    if len(relative_parts) >= 3 and relative_parts[0].casefold() == "users" and relative_parts[2].casefold() in PROTECTED_USER_FOLDERS:
+        raise ValueError("目标属于用户重要资料目录")
     for protected in protected_roots:
         protected = protected.resolve()
         if path == protected or is_within(path, protected):

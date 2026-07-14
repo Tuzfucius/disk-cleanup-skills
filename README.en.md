@@ -1,13 +1,13 @@
 # disk-cleanup-skills
 
-The `disk-cleanup-skills` project is a two-stage Windows disk audit and safe cleanup skill. The first stage indexes disk usage with WizTree and produces reviewable candidates. The second stage creates an immutable plan from candidate IDs belonging to the same task and, after explicit user confirmation, moves approved files to the Windows Recycle Bin.
+The `disk-cleanup-skills` project exposes only `scan` and `clean` on Windows. Scanning is read-only. Cleaning creates an immutable plan from candidate IDs and moves approved files or controlled directories to the Windows Recycle Bin only after approval in a later user turn.
 
 ## Safety Boundaries
 
 - Auditing and cleanup are strictly separated. Auditing never modifies the file system.
 - The cleanup entry point accepts only `run_id`, `candidate_id`, `plan_hash`, and a confirmation phrase. It does not accept arbitrary paths or commands.
 - Before cleanup, the root path, protected directories, reparse points, file identity, and modification time are validated again.
-- The current executor recycles one file at a time and does not recursively delete directories.
+- The executor supports files and controlled directories after reparse-point validation.
 - A failed Recycle Bin operation is never downgraded to permanent deletion.
 - The Web page is for review only. Actual cleanup can only be executed through this project's CLI.
 - The project does not run BleachBit cleaner and does not use `Remove-Item`, `rd`, or Shell COM as fallbacks.
@@ -18,10 +18,10 @@ Even with these protections, validate the workflow with a test directory first. 
 
 - Windows 10/11
 - Python 3.11 or later
-- 64-bit WizTree
+- 64-bit WizTree (optional, recommended for full-drive scans)
 - PowerShell 5.1 or later
 
-WizTree is not included. Obtain it through an official channel and follow its own license terms.
+WizTree is not included. The skill falls back to a slower read-only streaming walk; obtain WizTree from an official channel when full-drive speed matters.
 
 ## Quick Start
 
@@ -31,24 +31,18 @@ Clone this repository and open PowerShell in its directory. No machine-specific 
 $env:DISK_CLEAN_WIZTREE = "C:\Tools\WizTree\WizTree64.exe"
 ```
 
-Validate the skill:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode validate
-```
-
-### Stage 1: Audit
+### Stage 1: Scan
 
 Scan a local drive and create a task that expires after 24 hours:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode audit -Target "C:"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode scan -Target "C:"
 ```
 
 For a portable or non-standard installation, provide the executable path explicitly:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode audit -Target "C:" -WizTreePath "C:\Tools\WizTree\WizTree64.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode scan -Target "C:" -WizTreePath "C:\Tools\WizTree\WizTree64.exe"
 ```
 
 The default `ExportMaxDepth` is `0`, which means export depth is unlimited. A full-drive scan may take several minutes. The script waits for WizTree to finish exporting the CSV, then reports directory, file, extension, and cleanup-candidate summaries.
@@ -56,29 +50,25 @@ The default `ExportMaxDepth` is `0`, which means export depth is unlimited. A fu
 You can also import an existing WizTree CSV:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode audit -Target "C:" -CsvPath "C:\path\to\wiztree-export.csv"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode scan -Target "C:" -CsvPath "C:\path\to\wiztree-export.csv"
 ```
 
 The command returns a `run_id`. Runtime data is stored under `LOCALAPPDATA\DiskCleanupSkill\runs` and is removed after expiration.
 
-Review candidates:
-
-```powershell
-.\scripts\invoke-once.ps1 -Mode review -RunId "<run_id>"
-```
+Candidates are shown in both command output and the read-only local HTML report.
 
 ### Stage 2: Plan and Cleanup
 
 Select candidates only from the audit result:
 
 ```powershell
-.\scripts\invoke-once.ps1 -Mode plan -RunId "<run_id>" -CandidateId "C0001","C0002"
+.\scripts\invoke-once.ps1 -Mode clean -RunId "<run_id>" -CandidateId "C0123456789AB","CABCDEF012345"
 ```
 
 Review every exact path, risk, and `plan_hash` in the output. Then use the confirmation phrase printed by the command:
 
 ```powershell
-.\scripts\invoke-once.ps1 -Mode execute -RunId "<run_id>" -PlanHash "<plan_hash>" -Confirmation "DELETE <short-id>"
+.\scripts\invoke-once.ps1 -Mode clean -RunId "<run_id>" -PlanHash "<plan_hash>" -ApprovalCode "RECYCLE <code>"
 ```
 
 Possible result states:
@@ -88,11 +78,7 @@ Possible result states:
 - `FAILED`: the Windows Recycle Bin operation failed.
 - `UNKNOWN`: the result could not be verified reliably and must not be treated as success.
 
-Remove task data when finished:
-
-```powershell
-.\scripts\invoke-once.ps1 -Mode finalize -RunId "<run_id>"
-```
+Task data expires after 24 hours. Approval codes expire after 10 minutes and are single-use.
 
 ## Local Configuration and Privacy
 
@@ -112,7 +98,7 @@ Examples and tests must use fictional usernames, placeholder paths, and syntheti
 ```powershell
 $env:PYTHONPATH = "src"
 python -m pytest tests --basetemp .pytest_tmp
-python -m disk_cleanup validate
+python -m compileall -q src tests
 ```
 
 Project structure:

@@ -7,7 +7,6 @@ from typing import Any
 
 from .models import (
     AppConfig,
-    CleanupConfig,
     ConfigDiagnostic,
     LoggingConfig,
     ScanConfig,
@@ -73,7 +72,6 @@ def parse_config(raw: dict[str, Any], source_path: Path) -> AppConfig:
     tools = raw.get("tools", {})
     scan = raw.get("scan", {})
     storage = raw.get("storage", {})
-    cleanup = raw.get("cleanup", {})
     logging = raw.get("logging", {})
 
     try:
@@ -84,20 +82,11 @@ def parse_config(raw: dict[str, Any], source_path: Path) -> AppConfig:
             ),
             scan=ScanConfig(
                 targets=tuple(scan.get("targets", ["C:"])),
-                request_admin=bool(scan.get("request_admin", True)),
-                include_files=bool(scan.get("include_files", True)),
-                include_folders=bool(scan.get("include_folders", True)),
-                sort_by=str(scan.get("sort_by", "allocated")),
                 retain_scan_count=int(scan.get("retain_scan_count", 5)),
             ),
             storage=StorageConfig(
                 workspace=expand_path(str(storage.get("workspace", "%LOCALAPPDATA%\\DiskCleanupSkill"))),
                 database_name=str(storage.get("database_name", "index.sqlite3")),
-            ),
-            cleanup=CleanupConfig(
-                file_delete_mode=str(cleanup.get("file_delete_mode", "recycle_bin")),
-                require_preview=bool(cleanup.get("require_preview", True)),
-                verify_after_cleanup=bool(cleanup.get("verify_after_cleanup", True)),
             ),
             logging=LoggingConfig(
                 level=str(logging.get("level", "INFO")),

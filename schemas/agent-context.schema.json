@@ -20,7 +20,7 @@
           "size_bytes": { "type": "integer", "minimum": 0 },
           "score": { "type": "number" },
           "rule_name": { "type": "string", "minLength": 1 },
-          "risk_level": { "type": "string", "enum": ["low", "medium", "high"] }
+          "risk_level": { "type": "string", "enum": ["safe_cache", "safe_redownload", "review", "protected"] }
         }
       }
     },

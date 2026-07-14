@@ -19,19 +19,31 @@ def import_wiztree_csv(
 ) -> ImportSummary:
     if batch_size < 1:
         raise ValueError("batch_size 必须大于零")
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
     with stream_wiztree_csv(csv_path) as (metadata, nodes):
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            create_schema(conn, with_node_indexes=False)
-            scan_id = insert_scan(conn, metadata)
-            summary_values = insert_nodes(conn, scan_id, nodes, batch_size=batch_size)
-            create_path_index(conn)
-            backfill_parent_ids(conn, scan_id)
-            create_node_indexes(conn)
-            conn.commit()
+        return import_nodes(metadata, nodes, db_path, batch_size=batch_size)
+
+
+def import_nodes(
+    metadata: ScanMetadata,
+    nodes: Iterable[WizTreeNode],
+    db_path: Path,
+    *,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> ImportSummary:
+    """Import an arbitrary streaming scanner into the common SQLite index."""
+    if batch_size < 1:
+        raise ValueError("batch_size 必须大于零")
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        create_schema(conn, with_node_indexes=False)
+        scan_id = insert_scan(conn, metadata)
+        summary_values = insert_nodes(conn, scan_id, nodes, batch_size=batch_size)
+        create_path_index(conn)
+        backfill_parent_ids(conn, scan_id)
+        create_node_indexes(conn)
+        conn.commit()
 
     rows, files, folders, max_depth, total_allocated = summary_values
     return ImportSummary(

@@ -30,6 +30,9 @@ class CleanupSession:
     expires_at: str = ""
     protected_roots: tuple[Path, ...] = ()
     audit_path: Path | None = None
+    scan_fingerprint: str = ""
+    rule_pack_hash: str = ""
+    scan_truncated: bool = False
     selected_candidate_ids: list[str] = field(default_factory=list)
     plan: CleanupPlan | None = None
     state: str = "SCANNED"
@@ -53,6 +56,8 @@ class CleanupSession:
             self.plan = create_cleanup_plan(
                 self.db_path, self.scan_id, self.selected_candidate_ids,
                 run_id=self.run_id, expires_at=self.expires_at,
+                allowed_root=self.allowed_root, scan_fingerprint=self.scan_fingerprint,
+                rule_pack_hash=self.rule_pack_hash, scan_truncated=self.scan_truncated,
             )
         except CleanupPlanError as exc:
             raise CleanupSessionError(str(exc)) from exc

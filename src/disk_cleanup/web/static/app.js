@@ -4,28 +4,13 @@ if (token) {
   window.history.replaceState({}, document.title, window.location.pathname);
 }
 let selected = new Set();
-let currentPlanHash = "";
+let runId = "";
+let selectedRisk = "";
 
 function api(path) {
   const joiner = path.includes("?") ? "&" : "?";
   return fetch(`${path}${joiner}token=${encodeURIComponent(token)}`).then((response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  });
-}
-
-function postApi(path, payload = {}) {
-  const joiner = path.includes("?") ? "&" : "?";
-  return fetch(`${path}${joiner}token=${encodeURIComponent(token)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  }).then((response) => {
-    if (!response.ok) {
-      return response.json().then((body) => {
-        throw new Error(body.error || `HTTP ${response.status}`);
-      });
-    }
     return response.json();
   });
 }
@@ -41,11 +26,22 @@ function formatBytes(value) {
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+function riskLabel(value) {
+  return {
+    safe_cache: "绿色 · 可再生成缓存",
+    safe_redownload: "黄色 · 可重新下载",
+    review: "黄色 · 需人工审查",
+    protected: "红色 · 禁止执行",
+  }[value] || value;
+}
+
 function text(id, value) {
   document.getElementById(id).textContent = value;
 }
 
 async function loadSummary() {
+  const session = await api("/api/session");
+  runId = session.run_id || "";
   const data = await api("/api/summary");
   const scan = data.scan || {};
   text("scan-meta", `扫描 ${scan.id || "-"} · ${scan.root_path || "-"}`);
@@ -120,13 +116,20 @@ async function loadCandidates() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.value = row.candidate_id;
+    checkbox.disabled = !["safe_cache", "safe_redownload"].includes(row.risk);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) {
+        if (selectedRisk && selectedRisk !== row.risk) {
+          checkbox.checked = false;
+          return;
+        }
+        selectedRisk = row.risk;
         selected.add(row.candidate_id);
         item.classList.add("selected");
       } else {
         selected.delete(row.candidate_id);
         item.classList.remove("selected");
+        if (selected.size === 0) selectedRisk = "";
       }
       renderSelection();
     });
@@ -144,7 +147,7 @@ async function loadCandidates() {
 
     const meta = document.createElement("div");
     meta.className = `size risk-${row.risk}`;
-    meta.textContent = `${formatBytes(row.reclaimable_bytes)} · ${row.risk}`;
+    meta.textContent = `${formatBytes(row.reclaimable_bytes)} · ${riskLabel(row.risk)}`;
     label.append(checkbox, body);
     item.append(label, meta);
     container.appendChild(item);
@@ -153,51 +156,14 @@ async function loadCandidates() {
 
 function renderSelection() {
   const output = document.getElementById("cleanup-output");
-  output.textContent = selected.size === 0 ? "尚未选择候选项。" : `已选择 ${selected.size} 个候选项。`;
-  document.getElementById("confirm-button").disabled = true;
-  document.getElementById("execute-button").disabled = true;
-  currentPlanHash = "";
+  const ids = [...selected];
+  const command = ids.length === 0 ? "" : `disk-cleanup clean --run-id ${runId} ${ids.map((id) => `--candidate-id ${id}`).join(" ")}`;
+  output.textContent = command || "尚未选择可执行候选项。";
+  document.getElementById("copy-button").disabled = !command;
 }
 
-async function previewSelection() {
-  const candidateIds = [...selected];
-  await postApi("/api/selection", { candidate_ids: candidateIds });
-  const preview = await postApi("/api/preview");
-  currentPlanHash = preview.plan.plan_hash;
-  document.getElementById("cleanup-output").textContent = JSON.stringify(preview, null, 2);
-  document.getElementById("confirm-button").disabled = false;
-  document.getElementById("execute-button").disabled = true;
-}
-
-async function confirmSelection() {
-  const result = await postApi("/api/confirm", { plan_hash: currentPlanHash });
-  document.getElementById("cleanup-output").textContent = JSON.stringify(result, null, 2);
-  document.getElementById("execute-button").disabled = false;
-}
-
-async function executeSelection() {
-  const result = await postApi("/api/execute", { plan_hash: currentPlanHash });
-  document.getElementById("cleanup-output").textContent = JSON.stringify(result, null, 2);
-  document.getElementById("confirm-button").disabled = true;
-  document.getElementById("execute-button").disabled = true;
-}
-
-document.getElementById("preview-button").addEventListener("click", () => {
-  previewSelection().catch((error) => {
-    document.getElementById("cleanup-output").textContent = `预览失败: ${error.message}`;
-  });
-});
-
-document.getElementById("confirm-button").addEventListener("click", () => {
-  confirmSelection().catch((error) => {
-    document.getElementById("cleanup-output").textContent = `确认失败: ${error.message}`;
-  });
-});
-
-document.getElementById("execute-button").addEventListener("click", () => {
-  executeSelection().catch((error) => {
-    document.getElementById("cleanup-output").textContent = `执行失败: ${error.message}`;
-  });
+document.getElementById("copy-button").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(document.getElementById("cleanup-output").textContent);
 });
 
 Promise.all([loadSummary(), loadTree(), loadCandidates()]).catch((error) => {

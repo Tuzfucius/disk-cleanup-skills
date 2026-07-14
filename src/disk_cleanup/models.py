@@ -12,10 +12,6 @@ class ToolConfig:
 @dataclass(frozen=True)
 class ScanConfig:
     targets: tuple[str, ...]
-    request_admin: bool
-    include_files: bool
-    include_folders: bool
-    sort_by: str
     retain_scan_count: int
 
 
@@ -23,13 +19,6 @@ class ScanConfig:
 class StorageConfig:
     workspace: Path
     database_name: str
-
-
-@dataclass(frozen=True)
-class CleanupConfig:
-    file_delete_mode: str
-    require_preview: bool
-    verify_after_cleanup: bool
 
 
 @dataclass(frozen=True)
@@ -44,7 +33,6 @@ class AppConfig:
     tools: ToolConfig
     scan: ScanConfig
     storage: StorageConfig
-    cleanup: CleanupConfig
     logging: LoggingConfig
     source_path: Path
 
@@ -162,3 +150,7 @@ class CleanupPlan:
     risk_batch: str = ""
     approval_expires_at: str = ""
     approval_code: str = ""
+    allowed_root: str = ""
+    scan_fingerprint: str = ""
+    rule_pack_hash: str = ""
+    scan_truncated: bool = False

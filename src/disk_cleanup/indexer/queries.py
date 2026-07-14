@@ -121,7 +121,8 @@ def scan_summary(db_path: Path, scan_id: int) -> dict[str, Any]:
         ).fetchone()
         candidates = conn.execute(
             """
-            SELECT COUNT(*) AS candidate_count, COALESCE(SUM(reclaimable_bytes), 0) AS reclaimable_bytes
+            SELECT COUNT(*) AS candidate_count,
+                   COALESCE(SUM(CASE WHEN risk IN ('safe_cache', 'safe_redownload', 'low', 'medium') THEN reclaimable_bytes ELSE 0 END), 0) AS reclaimable_bytes
             FROM candidates
             WHERE scan_id = ?
             """,
