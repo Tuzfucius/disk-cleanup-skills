@@ -12,6 +12,7 @@
 - 执行器支持文件和经过重解析点复核的受控目录。
 - 回收站操作失败时不会降级为永久删除。
 - Web 页面只用于审查；真实删除只能通过本项目 CLI 执行。
+- Web 页面可生成不可变清理计划，但不提供删除 API 或“确认删除”按钮。
 - 不执行 BleachBit cleaner，不使用 Remove-Item、rd 或 Shell COM 作为回退。
 
 即使具备上述保护，也应先使用测试目录验证。不要首次运行就选择重要个人文件、项目目录或应用数据。
@@ -20,10 +21,19 @@
 
 - Windows 10/11
 - Python 3.11 或更高版本
-- WizTree 64 位版本（可选，整盘扫描推荐）
+- WizTree 64 位版本（整盘扫描必需）
 - PowerShell 5.1 或更高版本
 
-项目不包含 WizTree。缺失时会使用较慢的只读流式遍历；如需整盘高速扫描，请从官方渠道获取 WizTree 并遵守其许可。
+项目不包含 WizTree，也不会自动下载、安装或提权。扫描盘符根目录时必须提供 WizTree 64 位程序或其 CSV 导出；普通子目录才允许使用较慢的只读流式遍历。WizTree 按 `--wiztree`、`DISK_CLEAN_WIZTREE`、`config.local.toml` 和默认安装路径的顺序检测。
+
+```mermaid
+flowchart LR
+  A[WizTree 扫描或子目录流式扫描] --> B[本地 HTML 报告]
+  B --> C[勾选候选并生成不可变计划]
+  C --> D[新一轮对话: 执行删除勾选内容]
+  D --> E[Windows 回收站]
+  E --> F[报告页与本地端口自动关闭]
+```
 
 ## 快速开始
 
@@ -57,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -M
 
 命令返回 run_id。运行数据保存在 LOCALAPPDATA 下的 DiskCleanupSkill/runs 目录，过期后自动清理。
 
-候选项会同时出现在命令输出和只读本地 HTML 报告中。
+候选项会同时出现在命令输出和本地 HTML 报告中。报告展示最大目录与文件类型柱状图；勾选后点击“生成清理计划”，核对网页显示的精确路径和计划哈希，再在新一轮对话中说“执行删除勾选内容”。网页不会直接删除文件。
 
 ### 第二阶段：计划与清理
 
