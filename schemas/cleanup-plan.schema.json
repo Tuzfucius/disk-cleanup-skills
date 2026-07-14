@@ -33,7 +33,7 @@
         "required": [
           "candidate_id", "node_id", "backend", "action_type", "action_value",
           "path", "risk", "expected_reclaim_bytes", "volume_serial", "file_id",
-          "modified_ns", "size_bytes", "node_type"
+          "modified_ns", "size_bytes", "node_type", "tree_digest", "descendant_count"
         ],
         "additionalProperties": false,
         "properties": {
@@ -49,7 +49,9 @@
           "file_id": { "type": ["integer", "null"] },
           "modified_ns": { "type": ["integer", "null"] },
           "size_bytes": { "type": ["integer", "null"] },
-          "node_type": { "enum": ["file", "directory"] }
+          "node_type": { "enum": ["file", "directory"] },
+          "tree_digest": { "type": "string" },
+          "descendant_count": { "type": "integer", "minimum": 0 }
         }
       }
     }

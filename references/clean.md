@@ -12,6 +12,8 @@ Use this workflow only after a completed scan. It performs controlled moves to t
 6. Execute through the bundled CLI only. Never use permanent deletion or a shell fallback.
 7. Report every item as `RECYCLED`, `BLOCKED`, `FAILED`, or `UNKNOWN`. Describe bytes as moved to the Recycle Bin, not released disk space.
 
+Immediately before recycling, the executor atomically renames each approved target to a hidden sibling path and verifies its identity again. This closes the original-path replacement window; a restored item can therefore retain the `.disk-cleanup-pending` suffix, while the audit log preserves its original path.
+
 ## Command
 
 ```powershell

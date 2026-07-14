@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import stat
@@ -112,6 +113,35 @@ def assert_no_descendant_reparse_points(root: Path) -> None:
                     raise ValueError(f"目录包含 reparse point，拒绝清理: {entry.path}")
                 if entry.is_dir(follow_symlinks=False):
                     pending.append(Path(entry.path))
+
+
+def directory_manifest(root: Path) -> tuple[str, int]:
+    """Hash the exact descendant set approved for an executable directory plan."""
+    digest = hashlib.sha256()
+    count = 0
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        with os.scandir(current) as entries:
+            ordered = sorted(entries, key=lambda item: item.name.casefold())
+        for entry in ordered:
+            info = entry.stat(follow_symlinks=False)
+            attrs = getattr(info, "st_file_attributes", 0)
+            if entry.is_symlink() or attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                raise ValueError(f"目录包含 reparse point，拒绝清理: {entry.path}")
+            entry_path = Path(entry.path)
+            identity = handle_identity(entry_path)
+            relative = str(entry_path.relative_to(root)).replace("/", "\\").casefold()
+            kind = "directory" if entry.is_dir(follow_symlinks=False) else "file"
+            record = (
+                f"{relative}\0{kind}\0{identity.volume_serial}\0{identity.file_id}\0"
+                f"{identity.modified_ns}\0{identity.size_bytes}\n"
+            )
+            digest.update(record.encode("utf-8"))
+            count += 1
+            if kind == "directory":
+                pending.append(entry_path)
+    return digest.hexdigest(), count
 
 
 def assert_local_fixed_ntfs(path: Path) -> None:

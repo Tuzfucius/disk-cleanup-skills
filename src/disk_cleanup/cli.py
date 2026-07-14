@@ -25,7 +25,7 @@ from .models import ScanMetadata
 from .scanner.walk import walk_windows_tree
 from .security.paths import canonical_local_path
 from .tasks import cleanup_expired, create_task, finalize_task, load_task, task_lock, update_task
-from .cleaner.cleanup_plan import create_cleanup_plan, plan_to_dict
+from .cleaner.cleanup_plan import create_cleanup_plan, plan_to_dict, update_plan_state
 from .cleaner.session import CleanupSession
 from .cleaner.audit import prune_audit
 
@@ -104,12 +104,13 @@ def handle_scan(args: argparse.Namespace) -> int:
                 truncated = walker.stats.truncated
                 truncation_reason = walker.stats.truncation_reason
                 errors = walker.stats.errors
-                source_fingerprint = hashlib.sha256(
-                    f"{target}\0{summary.rows}\0{summary.total_file_allocated_bytes}".encode("utf-8")
-                ).hexdigest()
+                source_fingerprint = ""
 
         scan_data = scan_summary(task.db_path, summary.scan_id)
         _assert_matching_scan_root(str(target), str(scan_data.get("root_path") or ""))
+        scan_fingerprint = _database_scan_fingerprint(task.db_path, summary.scan_id)
+        if not source_fingerprint:
+            source_fingerprint = scan_fingerprint
         analysis = analyze_scan(task.db_path, summary.scan_id)
         if truncated:
             with sqlite3.connect(task.db_path) as conn:
@@ -129,6 +130,7 @@ def handle_scan(args: argparse.Namespace) -> int:
         update_task(
             task, state="SCANNED", target=str(target), scan_id=summary.scan_id,
             provider=provider, source_fingerprint=source_fingerprint,
+            scan_fingerprint=scan_fingerprint,
             rule_pack_hash=rule_hash, truncated=truncated,
             truncation_reason=truncation_reason, scan_errors=len(errors),
             candidate_count=analysis.candidate_count,
@@ -168,6 +170,7 @@ def handle_clean(args: argparse.Namespace) -> int:
         update_task(task, state="NEEDS_REVIEW")
         raise ValueError("规则包自扫描后已变化，请重新扫描")
     with task_lock(task):
+        meta = json.loads(task.metadata_path.read_text(encoding="utf-8"))
         if args.candidate_id:
             if args.plan_hash or args.approval_code:
                 raise ValueError("生成计划与执行计划必须分成两次调用")
@@ -175,7 +178,7 @@ def handle_clean(args: argparse.Namespace) -> int:
                 task.db_path, int(meta["scan_id"]), allowed_root=str(meta["target"]),
                 run_id=task.run_id, expires_at=task.expires_at,
                 protected_roots=(task.root, Path.cwd()), audit_path=audit_path,
-                scan_fingerprint=str(meta.get("source_fingerprint", "")),
+                scan_fingerprint=str(meta.get("scan_fingerprint", "")),
                 rule_pack_hash=str(meta.get("rule_pack_hash", "")),
                 scan_truncated=bool(meta.get("truncated", False)),
             )
@@ -190,17 +193,19 @@ def handle_clean(args: argparse.Namespace) -> int:
             task.db_path, int(meta["scan_id"]), allowed_root=str(meta["target"]),
             run_id=task.run_id, expires_at=task.expires_at,
             protected_roots=(task.root, Path.cwd()), audit_path=audit_path,
-            scan_fingerprint=str(meta.get("source_fingerprint", "")),
+            scan_fingerprint=str(meta.get("scan_fingerprint", "")),
             rule_pack_hash=str(meta.get("rule_pack_hash", "")),
             scan_truncated=bool(meta.get("truncated", False)),
         )
+        _assert_recoverable_plan_state(task, args.plan_hash, str(meta.get("state", "")))
         try:
             session.confirm(args.plan_hash, args.approval_code)
             update_task(task, state="APPROVED")
             update_task(task, state="EXECUTING")
             result = session.execute(args.plan_hash)
             update_task(task, state=result["state"], result=result["result"])
-        except ValueError:
+        except Exception:
+            _mark_plan_needs_review(task.root, args.plan_hash)
             update_task(task, state="NEEDS_REVIEW")
             raise
         print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -224,6 +229,51 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _database_scan_fingerprint(db_path: Path, scan_id: int) -> str:
+    """Hash imported scan content without materializing the node set."""
+    digest = hashlib.sha256()
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            SELECT full_path, node_type, logical_bytes, allocated_bytes,
+                   subtree_allocated_bytes, modified_at, attributes
+            FROM nodes WHERE scan_id = ?
+            ORDER BY full_path COLLATE NOCASE, id
+            """,
+            (scan_id,),
+        )
+        while rows := cursor.fetchmany(4096):
+            for row in rows:
+                for value in row:
+                    digest.update(str(value).encode("utf-8", errors="surrogatepass"))
+                    digest.update(b"\0")
+                digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _assert_recoverable_plan_state(task: Any, plan_hash: str, task_state: str) -> None:
+    state_path = task.root / "plans" / f"{plan_hash}.state.json"
+    if not state_path.is_file():
+        raise ValueError("持久化清理计划不存在")
+    plan_state = str(json.loads(state_path.read_text(encoding="utf-8")).get("state", ""))
+    if task_state == "PLANNED" and plan_state == "PLANNED":
+        return
+    _mark_plan_needs_review(task.root, plan_hash)
+    update_task(task, state="NEEDS_REVIEW")
+    raise ValueError("检测到中断或不一致的计划状态，请重新扫描并审批")
+
+
+def _mark_plan_needs_review(task_root: Path, plan_hash: str) -> None:
+    state_path = task_root / "plans" / f"{plan_hash}.state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        current = str(state.get("state", ""))
+        if current in {"PLANNED", "APPROVED", "EXECUTING"}:
+            update_plan_state(task_root, plan_hash, current, "NEEDS_REVIEW")
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
 
 
 def _rule_pack_hash() -> str:

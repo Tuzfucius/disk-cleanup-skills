@@ -102,7 +102,7 @@ class CleanupSession:
             )
             self.state = str(self.result["execution_status"])
             update_plan_state(self.task_root, plan_hash, "EXECUTING", self.state)
-        except (CleanupPlanError, ValueError, OSError) as exc:
+        except Exception as exc:
             self.state = "NEEDS_REVIEW"
             try:
                 update_plan_state(self.task_root, plan_hash, "EXECUTING", "NEEDS_REVIEW")

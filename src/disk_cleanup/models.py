@@ -135,6 +135,8 @@ class CleanupAction:
     modified_ns: int | None = None
     size_bytes: int | None = None
     node_type: str = "file"
+    tree_digest: str = ""
+    descendant_count: int = 0
 
 
 @dataclass(frozen=True)

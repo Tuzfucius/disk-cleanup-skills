@@ -63,9 +63,9 @@ def create_cleanup_plan(
         raise CleanupPlanError(f"review/protected 候选项不能进入清理计划: {', '.join(sorted(blocked))}")
     if len(risks) != 1:
         raise CleanupPlanError("safe_cache 与 safe_redownload 必须生成独立审批批次")
-    actions = tuple(action_from_candidate(row) for row in rows)
-    if scan_truncated and any(action.node_type == "directory" for action in actions):
+    if scan_truncated and any(str(row["node_type"]) == "directory" for row in rows):
         raise CleanupPlanError("扫描结果不完整，禁止生成目录清理计划")
+    actions = tuple(action_from_candidate(row) for row in rows)
     clock = now or datetime.now(timezone.utc)
     created_at = clock.isoformat()
     approval_expires_at = (clock + timedelta(minutes=10)).isoformat()
@@ -112,11 +112,15 @@ def action_from_candidate(row: sqlite3.Row) -> CleanupAction:
     if backend not in {"file", "recycle"}:
         raise CleanupPlanError("仅允许回收站候选项，拒绝 cleaner 或命令后端")
     path = str(row["full_path"])
-    from disk_cleanup.security.paths import file_identity
+    from disk_cleanup.security.paths import directory_manifest, file_identity
     try:
         volume_serial, file_id, modified_ns, size_bytes = file_identity(Path(path))
     except OSError as exc:
         raise CleanupPlanError(f"无法读取候选项身份，拒绝生成清理计划: {path}: {exc}") from exc
+    tree_digest = ""
+    descendant_count = 0
+    if str(row["node_type"]) == "directory":
+        tree_digest, descendant_count = directory_manifest(Path(path))
     return CleanupAction(
         candidate_id=str(row["candidate_id"]), node_id=int(row["node_id"]), backend="file",
         action_type="recycle", action_value=path, path=path,
@@ -124,6 +128,7 @@ def action_from_candidate(row: sqlite3.Row) -> CleanupAction:
         expected_reclaim_bytes=int(row["reclaimable_bytes"]),
         volume_serial=volume_serial, file_id=file_id, modified_ns=modified_ns,
         size_bytes=size_bytes, node_type=str(row["node_type"]),
+        tree_digest=tree_digest, descendant_count=descendant_count,
     )
 
 
