@@ -9,7 +9,7 @@ The `disk-cleanup-skills` project exposes only `scan` and `clean` on Windows. Sc
 - Before cleanup, the root path, protected directories, reparse points, file identity, and modification time are validated again.
 - The executor supports files and controlled directories after reparse-point validation.
 - A failed Recycle Bin operation is never downgraded to permanent deletion.
-- The Web page is for review only. Actual cleanup can only be executed through this project's CLI.
+- The Web page can create an immutable plan but has no deletion API. Actual cleanup can only be executed through this project's CLI after a later chat approval.
 - The project does not run BleachBit cleaner and does not use `Remove-Item`, `rd`, or Shell COM as fallbacks.
 
 Even with these protections, validate the workflow with a test directory first. Do not select important personal files, project directories, or application data on the first run.
@@ -18,10 +18,10 @@ Even with these protections, validate the workflow with a test directory first. 
 
 - Windows 10/11
 - Python 3.11 or later
-- 64-bit WizTree (optional, recommended for full-drive scans)
+- 64-bit WizTree (required for full-drive scans)
 - PowerShell 5.1 or later
 
-WizTree is not included. The skill falls back to a slower read-only streaming walk; obtain WizTree from an official channel when full-drive speed matters.
+WizTree is not included and is never downloaded, installed, or elevated automatically. A drive-root scan requires WizTree or an existing WizTree CSV; the slower read-only streaming walk is limited to ordinary subdirectories.
 
 ## Quick Start
 
@@ -55,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -M
 
 The command returns a `run_id`. Runtime data is stored under `LOCALAPPDATA\DiskCleanupSkill\runs` and is removed after expiration.
 
-Candidates are shown in both command output and the read-only local HTML report.
+Candidates are shown in command output and the local HTML report. The report includes directory and file-type bar charts. Select candidates, use **Generate cleanup plan**, review the exact paths, then say `执行删除勾选内容` in a later chat turn. The page never deletes files.
 
 ### Stage 2: Plan and Cleanup
 
