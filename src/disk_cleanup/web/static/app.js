@@ -6,12 +6,27 @@ if (token) {
 let selected = new Set();
 let runId = "";
 let selectedRisk = "";
+let chartData = { top_directories: [], extension_summary: [] };
+let chartMode = localStorage.getItem("disk-cleanup-chart-mode") || "directories";
+let chartLimit = Number(localStorage.getItem("disk-cleanup-chart-limit") || "10");
 
 function api(path) {
   const joiner = path.includes("?") ? "&" : "?";
-  return fetch(`${path}${joiner}token=${encodeURIComponent(token)}`).then((response) => {
+  return fetch(`${path}${joiner}token=${encodeURIComponent(token)}`, { headers: { Authorization: `Bearer ${token}` } }).then((response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
+  });
+}
+
+function post(path, payload) {
+  return fetch(`${path}?token=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  }).then(async (response) => {
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+    return value;
   });
 }
 
@@ -43,6 +58,7 @@ async function loadSummary() {
   const session = await api("/api/session");
   runId = session.run_id || "";
   const data = await api("/api/summary");
+  chartData = data;
   const scan = data.scan || {};
   text("scan-meta", `扫描 ${scan.id || "-"} · ${scan.root_path || "-"}`);
   text("files", scan.files || 0);
@@ -50,6 +66,39 @@ async function loadSummary() {
   text("reclaimable", formatBytes(scan.reclaimable_bytes));
   text("max-depth", scan.max_depth || 0);
   text("candidate-total", `候选项 ${scan.candidate_count || 0}`);
+  renderChart();
+}
+
+function renderChart() {
+  const source = chartMode === "directories" ? chartData.top_directories || [] : chartData.extension_summary || [];
+  const rows = source.slice(0, chartLimit);
+  const max = Math.max(...rows.map((row) => Number(row.subtree_allocated_bytes || row.allocated_bytes || 0)), 1);
+  const container = document.getElementById("chart");
+  container.innerHTML = "";
+  for (const row of rows) {
+    const bytes = Number(row.subtree_allocated_bytes || row.allocated_bytes || 0);
+    const item = document.createElement("div");
+    item.className = "bar-row";
+    item.setAttribute("role", "listitem");
+    const label = document.createElement("span");
+    label.className = "bar-label";
+    label.textContent = chartMode === "directories" ? row.full_path : row.extension;
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const bar = document.createElement("div");
+    bar.className = "bar-value";
+    bar.style.width = `${Math.max(2, (bytes / max) * 100)}%`;
+    track.appendChild(bar);
+    const value = document.createElement("span");
+    value.className = "bar-size";
+    value.textContent = formatBytes(bytes);
+    item.append(label, track, value);
+    container.appendChild(item);
+  }
+  for (const button of document.querySelectorAll(".chart-mode")) {
+    button.classList.toggle("active", button.dataset.mode === chartMode);
+  }
+  document.getElementById("chart-limit").value = String(chartLimit);
 }
 
 async function loadTree(nodeId = null, container = document.getElementById("tree")) {
@@ -157,16 +206,62 @@ async function loadCandidates() {
 function renderSelection() {
   const output = document.getElementById("cleanup-output");
   const ids = [...selected];
-  const command = ids.length === 0 ? "" : `disk-cleanup clean --run-id ${runId} ${ids.map((id) => `--candidate-id ${id}`).join(" ")}`;
-  output.textContent = command || "尚未选择可执行候选项。";
-  document.getElementById("copy-button").disabled = !command;
+  output.textContent = ids.length === 0 ? "尚未选择可执行候选项。" : `已选择 ${ids.length} 项。生成计划后，在对话中说：执行删除勾选内容`;
+  document.getElementById("plan-button").disabled = ids.length === 0;
+  document.getElementById("copy-button").disabled = true;
 }
 
 document.getElementById("copy-button").addEventListener("click", async () => {
   await navigator.clipboard.writeText(document.getElementById("cleanup-output").textContent);
 });
 
+document.getElementById("plan-button").addEventListener("click", async () => {
+  const output = document.getElementById("cleanup-output");
+  const button = document.getElementById("plan-button");
+  button.disabled = true;
+  try {
+    const result = await post("/api/plans", { candidate_ids: [...selected] });
+    const lines = result.plans.flatMap((plan) => [
+      `${plan.risk_batch} · ${formatBytes(plan.expected_reclaim_bytes)}`,
+      ...plan.actions.map((action) => action.path),
+      `计划哈希: ${plan.plan_hash}`,
+    ]);
+    output.textContent = `${lines.join("\n")}\n\n请在新一轮对话中说：执行删除勾选内容`;
+    document.getElementById("copy-button").disabled = false;
+  } catch (error) {
+    output.textContent = `无法生成计划: ${error.message}`;
+  } finally {
+    button.disabled = selected.size === 0;
+  }
+});
+
+for (const button of document.querySelectorAll(".chart-mode")) {
+  button.addEventListener("click", () => {
+    chartMode = button.dataset.mode;
+    localStorage.setItem("disk-cleanup-chart-mode", chartMode);
+    renderChart();
+  });
+}
+document.getElementById("chart-limit").addEventListener("change", (event) => {
+  chartLimit = Number(event.target.value);
+  localStorage.setItem("disk-cleanup-chart-limit", String(chartLimit));
+  renderChart();
+});
+
 Promise.all([loadSummary(), loadTree(), loadCandidates()]).catch((error) => {
   text("scan-meta", `加载失败: ${error.message}`);
 });
+
+setInterval(async () => {
+  try {
+    const session = await api("/api/session");
+    if (["COMPLETED", "PARTIAL"].includes(session.state)) {
+      document.body.replaceChildren();
+      window.close();
+      window.location.replace("about:blank");
+    }
+  } catch (_) {
+    // The server closes after terminal cleanup; no retry is needed.
+  }
+}, 1000);
 

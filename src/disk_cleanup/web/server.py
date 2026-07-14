@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import secrets
 import threading
+import time
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from disk_cleanup.web.api import AuditApi
+from disk_cleanup.cleaner.cleanup_plan import CleanupPlanError
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -19,6 +21,7 @@ class AuditServer(ThreadingHTTPServer):
     def __init__(self, server_address: tuple[str, int], api: AuditApi) -> None:
         super().__init__(server_address, AuditRequestHandler)
         self.api = api
+        self.last_activity = time.monotonic()
 
     @property
     def url(self) -> str:
@@ -46,6 +49,7 @@ def serve_forever(
     print(f"审计界面: {server.url}")
     if open_browser:
         webbrowser.open(server.url)
+    _start_lifecycle_watcher(server)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -58,6 +62,24 @@ def start_in_thread(server: AuditServer) -> threading.Thread:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return thread
+
+
+def _start_lifecycle_watcher(server: AuditServer, idle_seconds: int = 900) -> None:
+    def watch() -> None:
+        while True:
+            time.sleep(1)
+            try:
+                metadata = json.loads((server.api.db_path.parent / "task.json").read_text(encoding="utf-8"))
+                if metadata.get("state") in {"COMPLETED", "PARTIAL"}:
+                    time.sleep(3)
+                    threading.Thread(target=server.shutdown, daemon=True).start()
+                    return
+                if time.monotonic() - server.last_activity > idle_seconds:
+                    threading.Thread(target=server.shutdown, daemon=True).start()
+                    return
+            except (OSError, json.JSONDecodeError):
+                return
+    threading.Thread(target=watch, daemon=True).start()
 
 
 class AuditRequestHandler(BaseHTTPRequestHandler):
@@ -95,11 +117,30 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self.write_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        self.write_json({"error": "read-only server"}, HTTPStatus.METHOD_NOT_ALLOWED)
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/plans":
+            self.write_json({"error": "method not allowed"}, HTTPStatus.METHOD_NOT_ALLOWED)
+            return
+        if parsed.path.startswith("/api/"):
+            self.server.last_activity = time.monotonic()
+        if not self.authorized(parsed):
+            self.write_json({"error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
+            return
+        self.server.last_activity = time.monotonic()
+        try:
+            payload = self.read_json()
+            candidate_ids = payload.get("candidate_ids")
+            if not isinstance(candidate_ids, list) or not all(isinstance(value, str) for value in candidate_ids):
+                raise CleanupPlanError("candidate_ids 必须为字符串数组")
+            self.write_json(self.server.api.create_plan(candidate_ids), HTTPStatus.CREATED)
+        except (CleanupPlanError, ValueError, json.JSONDecodeError) as exc:
+            self.write_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
     def authorized(self, parsed) -> bool:
-        query = parse_qs(parsed.query)
-        token = query.get("token", [""])[0]
+        token = self.headers.get("Authorization", "").removeprefix("Bearer ")
+        if not token:
+            query = parse_qs(parsed.query)
+            token = query.get("token", [""])[0]
         return secrets.compare_digest(token, self.server.api.token)
 
     def write_static(self, filename: str, content_type: str) -> None:

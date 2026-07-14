@@ -26,6 +26,7 @@ from .scanner.walk import walk_windows_tree
 from .security.paths import canonical_local_path
 from .tasks import cleanup_expired, create_task, finalize_task, load_task, task_lock, update_task
 from .cleaner.cleanup_plan import create_cleanup_plan, plan_to_dict, update_plan_state
+from .cleaner.selection import consume_selected_plan_set, finish_selected_plan_set
 from .cleaner.session import CleanupSession
 from .cleaner.audit import prune_audit
 
@@ -60,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     clean.add_argument("--candidate-id", action="append")
     clean.add_argument("--plan-hash")
     clean.add_argument("--approval-code")
+    clean.add_argument("--selected-plan", action="store_true")
     clean.set_defaults(func=handle_clean)
 
     return parser
@@ -69,6 +71,12 @@ def handle_scan(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     cleanup_expired(config.storage.workspace)
     target = canonical_local_path(args.target)
+    configured_wiztree = Path(args.wiztree).resolve(strict=True) if args.wiztree else config.tools.wiztree_executable
+    if not args.csv and _is_volume_root(target) and not configured_wiztree.is_file():
+        raise ValueError(
+            "整盘扫描需要 WizTree 64 位程序或已导出的 WizTree CSV；"
+            "请在 config.local.toml、--wiztree 或 DISK_CLEAN_WIZTREE 中指定 WizTree64.exe"
+        )
     task = create_task(config.storage.workspace, str(target))
     csv_path: Path | None = None
     try:
@@ -82,7 +90,7 @@ def handle_scan(args: argparse.Namespace) -> int:
             source_fingerprint = _sha256_file(csv_path)
             summary = import_wiztree_csv(csv_path, task.db_path)
         else:
-            wiztree = Path(args.wiztree).resolve(strict=True) if args.wiztree else config.tools.wiztree_executable
+            wiztree = configured_wiztree
             if wiztree.is_file():
                 provider = "wiztree"
                 csv_path = task.root / "wiztree-export.csv"
@@ -135,6 +143,14 @@ def handle_scan(args: argparse.Namespace) -> int:
             truncation_reason=truncation_reason, scan_errors=len(errors),
             candidate_count=analysis.candidate_count,
         )
+        report_summary = {
+            "scan": scan_summary(task.db_path, summary.scan_id),
+            "top_directories": largest_directories(task.db_path, summary.scan_id, 20),
+            "extension_summary": extension_summary(task.db_path, summary.scan_id, 20),
+        }
+        (task.root / "report-summary.json").write_text(
+            json.dumps(report_summary, ensure_ascii=False), encoding="utf-8"
+        )
         report_url = None if args.no_report else _launch_report(
             task.db_path, summary.scan_id, task.run_id, open_browser=not args.no_open
         )
@@ -145,10 +161,10 @@ def handle_scan(args: argparse.Namespace) -> int:
                 "truncated": truncated, "reason": truncation_reason,
                 "errors": [{"path": path, "message": message} for path, message in errors[:20]],
             },
-            "scan": scan_summary(task.db_path, summary.scan_id),
-            "largest_directories": largest_directories(task.db_path, summary.scan_id, 10),
+            "scan": report_summary["scan"],
+            "largest_directories": report_summary["top_directories"][:10],
             "largest_files": largest_files(task.db_path, summary.scan_id, 10),
-            "extension_summary": extension_summary(task.db_path, summary.scan_id, 10),
+            "extension_summary": report_summary["extension_summary"][:10],
             "cleanup_candidates": candidate_rows(task.db_path, summary.scan_id, 100),
             "report_url": report_url,
             "notice": "候选字节数表示可移入回收站的数据；清空回收站前不代表已释放空间。",
@@ -171,6 +187,37 @@ def handle_clean(args: argparse.Namespace) -> int:
         raise ValueError("规则包自扫描后已变化，请重新扫描")
     with task_lock(task):
         meta = json.loads(task.metadata_path.read_text(encoding="utf-8"))
+        if args.selected_plan:
+            if args.candidate_id or args.plan_hash or args.approval_code:
+                raise ValueError("--selected-plan 不能与其他 clean 参数同时使用")
+            selected_plan_set = consume_selected_plan_set(task.root)
+            results: list[dict[str, Any]] = []
+            try:
+                for item in selected_plan_set["plans"]:
+                    session = CleanupSession(
+                        task.db_path, int(meta["scan_id"]), allowed_root=str(meta["target"]),
+                        run_id=task.run_id, expires_at=task.expires_at,
+                        protected_roots=(task.root, Path.cwd()), audit_path=audit_path,
+                        scan_fingerprint=str(meta.get("scan_fingerprint", "")),
+                        rule_pack_hash=str(meta.get("rule_pack_hash", "")),
+                        scan_truncated=bool(meta.get("truncated", False)),
+                    )
+                    session.confirm(str(item["plan_hash"]), str(item["approval_code"]))
+                    update_task(task, state="APPROVED")
+                    update_task(task, state="EXECUTING")
+                    result = session.execute(str(item["plan_hash"]))
+                    results.append(result)
+                    if result["state"] != "COMPLETED":
+                        break
+                final_state = "COMPLETED" if results and all(item["state"] == "COMPLETED" for item in results) else "PARTIAL"
+                finish_selected_plan_set(task.root, final_state)
+                update_task(task, state=final_state, result={"plans": results})
+                print(json.dumps({"state": final_state, "plans": results}, ensure_ascii=False, indent=2))
+                return 0
+            except Exception:
+                finish_selected_plan_set(task.root, "NEEDS_REVIEW")
+                update_task(task, state="NEEDS_REVIEW")
+                raise
         if args.candidate_id:
             if args.plan_hash or args.approval_code:
                 raise ValueError("生成计划与执行计划必须分成两次调用")
@@ -229,6 +276,10 @@ def _sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _is_volume_root(path: Path) -> bool:
+    return ntpath.normcase(str(path)) == ntpath.normcase(ntpath.dirname(str(path)))
 
 
 def _database_scan_fingerprint(db_path: Path, scan_id: int) -> str:
@@ -306,7 +357,12 @@ def _launch_report(db_path: Path, scan_id: int, run_id: str, *, open_browser: bo
         command.append("--no-open")
     kwargs: dict[str, Any] = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+        kwargs["creationflags"] = (
+            subprocess.CREATE_NO_WINDOW
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | 0x01000000  # CREATE_BREAKAWAY_FROM_JOB: do not hold the calling agent session open.
+        )
     subprocess.Popen(command, **kwargs)
     return f"http://127.0.0.1:{port}/?token={token}"
 

@@ -13,6 +13,7 @@ param(
     ,[string[]]$CandidateId
     ,[string]$PlanHash
     ,[string]$ApprovalCode
+    ,[switch]$SelectedPlan
 )
 
 $ErrorActionPreference = "Stop"
@@ -139,7 +140,10 @@ retain_days = 1
         elseif ($PlanHash -and $ApprovalCode) {
             $argsList += @("--plan-hash", $PlanHash, "--approval-code", $ApprovalCode)
         }
-        else { throw "clean requires -CandidateId, or -PlanHash with -ApprovalCode" }
+        elseif ($SelectedPlan) {
+            $argsList += "--selected-plan"
+        }
+        else { throw "clean requires -CandidateId, -SelectedPlan, or -PlanHash with -ApprovalCode" }
         & $Python @argsList
         exit $LASTEXITCODE
     }
