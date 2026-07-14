@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from disk_cleanup.cli import _assert_matching_scan_root, _database_scan_fingerprint, build_parser, main
+from disk_cleanup.cli import _assert_matching_scan_root, _database_scan_fingerprint, _is_volume_root, build_parser, main
 
 
 def test_public_cli_exposes_only_scan_and_clean() -> None:
@@ -19,6 +19,11 @@ def test_scan_root_mismatch_is_rejected() -> None:
     _assert_matching_scan_root("C:\\", "c:\\")
     with pytest.raises(ValueError, match="根目录"):
         _assert_matching_scan_root("C:\\", "D:\\")
+
+
+def test_volume_root_detection_distinguishes_subdirectory() -> None:
+    assert _is_volume_root(Path("C:\\"))
+    assert not _is_volume_root(Path("C:\\Users"))
 
 
 def test_scan_fingerprint_binds_imported_node_content(tmp_path: Path) -> None:

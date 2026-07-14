@@ -14,6 +14,7 @@ from disk_cleanup.cleaner.cleanup_plan import (
     load_persisted_plan,
 )
 from disk_cleanup.cleaner.executor import execute_plan
+from disk_cleanup.cleaner.selection import create_selected_plan_set, load_selected_plan_set
 from disk_cleanup.cleaner.session import CleanupSession, CleanupSessionError
 
 
@@ -160,3 +161,16 @@ def test_session_crash_recovery_moves_plan_to_needs_review(tmp_path: Path, monke
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert session.state == "NEEDS_REVIEW"
     assert state["state"] == "NEEDS_REVIEW"
+
+
+def test_web_selected_plan_set_persists_approval_without_exposing_it(tmp_path: Path) -> None:
+    db_path, ids = build_database(tmp_path)
+    result = create_selected_plan_set(
+        db_path, 1, ids, run_id="a" * 32, expires_at="2030-01-01T00:00:00+00:00",
+        allowed_root=str(tmp_path), scan_fingerprint="scan", rule_pack_hash="rules",
+        scan_truncated=False,
+    )
+    persisted = load_selected_plan_set(tmp_path)
+    assert result["state"] == "PLANNED"
+    assert "approval_code" not in result["plans"][0]
+    assert persisted["plans"][0]["approval_code"].startswith("RECYCLE ")

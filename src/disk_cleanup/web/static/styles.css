@@ -82,6 +82,17 @@ h2 {
   margin: 0;
 }
 
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.chart-panel { grid-column: 1 / -1; }
+.bar-chart { display: grid; gap: 8px; margin-top: 16px; }
+.bar-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(120px, 3fr) 88px; align-items: center; gap: 12px; }
+.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 14px; background: #e6edf3; }
+.bar-value { height: 100%; background: #1f7a5b; }
+.bar-size { text-align: right; font-variant-numeric: tabular-nums; }
+.chart-mode.active { background: #1f7a5b; color: #fff; }
+@media (max-width: 700px) { .section-heading { align-items: flex-start; flex-direction: column; } .bar-row { grid-template-columns: minmax(0, 1fr) 72px; } .bar-track { grid-column: 1 / -1; grid-row: 2; } }
+
 .metrics div,
 .metric {
   padding: var(--space-1);

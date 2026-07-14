@@ -37,11 +37,24 @@
       </section>
 
       <section aria-labelledby="cleanup-title" class="panel cleanup-panel">
-        <h2 id="cleanup-title">清理命令</h2>
+        <h2 id="cleanup-title">清理计划</h2>
         <div class="toolbar">
-          <button id="copy-button" type="button" disabled>复制命令</button>
+          <button id="plan-button" type="button" disabled>生成清理计划</button>
+          <button id="copy-button" type="button" disabled>复制对话指令</button>
         </div>
         <pre id="cleanup-output" class="output">尚未选择候选项。</pre>
+      </section>
+
+      <section aria-labelledby="chart-title" class="panel chart-panel">
+        <div class="section-heading">
+          <h2 id="chart-title">空间分布</h2>
+          <div class="toolbar" role="group" aria-label="图表维度">
+            <button class="chart-mode" data-mode="directories" type="button">目录</button>
+            <button class="chart-mode" data-mode="extensions" type="button">文件类型</button>
+            <select id="chart-limit" aria-label="显示数量"><option value="10">Top 10</option><option value="20">Top 20</option></select>
+          </div>
+        </div>
+        <div id="chart" class="bar-chart" role="list"></div>
       </section>
     </main>
 
