@@ -145,6 +145,8 @@ class CleanupAction:
     volume_serial: int | None = None
     file_id: int | None = None
     modified_ns: int | None = None
+    size_bytes: int | None = None
+    node_type: str = "file"
 
 
 @dataclass(frozen=True)
@@ -157,3 +159,6 @@ class CleanupPlan:
     plan_hash: str
     run_id: str = ""
     expires_at: str = ""
+    risk_batch: str = ""
+    approval_expires_at: str = ""
+    approval_code: str = ""

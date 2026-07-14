@@ -2,7 +2,7 @@
 id = "user-temp"
 category = "known_cache"
 path_regex = "(?i)\\\\AppData\\\\Local\\\\Temp(\\\\|$)"
-risk = "low"
+risk = "safe_cache"
 confidence = 0.92
 backend = "file"
 action = "recycle_known_temp_files"
@@ -13,7 +13,7 @@ evidence = "用户临时文件目录，可再生成，仍需预览确认。"
 id = "npm-cache"
 category = "package_cache"
 path_regex = "(?i)\\\\npm-cache(\\\\|$)"
-risk = "low"
+risk = "safe_redownload"
 confidence = 0.9
 backend = "file"
 action = "recycle_package_cache"
@@ -24,7 +24,7 @@ evidence = "npm 包缓存目录，可由包管理器重新下载。"
 id = "jetbrains-cache"
 category = "ide_cache"
 path_regex = "(?i)\\\\AppData\\\\Local\\\\JetBrains\\\\[^\\\\]+\\\\(caches|index|log|tmp)(\\\\|$)"
-risk = "medium"
+risk = "safe_redownload"
 confidence = 0.78
 backend = "file"
 action = "review_then_recycle_cache"
@@ -35,10 +35,54 @@ evidence = "JetBrains 明确的缓存、索引、日志或临时子目录；应�
 id = "vscode-cache"
 category = "ide_cache"
 path_regex = "(?i)\\\\\\.vscode\\\\(Cache|CachedData|logs|User\\\\workspaceStorage)(\\\\|$)"
-risk = "medium"
+risk = "safe_redownload"
 confidence = 0.74
 backend = "file"
 action = "review_then_recycle_cache"
 default_selectable = false
 evidence = "VS Code 缓存、日志或工作区缓存目录。"
+
+[[rule]]
+id = "pip-cache"
+category = "package_cache"
+path_regex = "(?i)\\\\pip\\\\Cache(\\\\|$)"
+risk = "safe_redownload"
+confidence = 0.94
+backend = "file"
+action = "recycle"
+default_selectable = false
+evidence = "pip 下载与构建缓存，可重新下载。"
+
+[[rule]]
+id = "uv-cache"
+category = "package_cache"
+path_regex = "(?i)\\\\uv\\\\cache(\\\\|$)"
+risk = "safe_redownload"
+confidence = 0.9
+backend = "file"
+action = "recycle"
+default_selectable = false
+evidence = "uv 包缓存，可重新下载。"
+
+[[rule]]
+id = "huggingface-cache"
+category = "model_cache"
+path_regex = '(?i)\\\.cache\\huggingface\\hub(\\|$)'
+risk = "review"
+confidence = 0.78
+backend = "file"
+action = "manual_review"
+default_selectable = false
+evidence = "模型缓存通常可重新下载，但下载成本可能很高。"
+
+[[rule]]
+id = "browser-cache"
+category = "browser_cache"
+path_regex = "(?i)\\\\(Chrome|Edge|Brave-Browser)\\\\User Data\\\\[^\\\\]+\\\\(Cache|Code Cache|GPUCache)(\\\\|$)"
+risk = "safe_cache"
+confidence = 0.9
+backend = "file"
+action = "recycle"
+default_selectable = false
+evidence = "仅匹配浏览器缓存子目录，不匹配身份、Cookie 或配置数据。"
 

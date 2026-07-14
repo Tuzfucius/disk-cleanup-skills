@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
@@ -59,61 +60,82 @@ def build_candidates(
         ORDER BY subtree_allocated_bytes DESC
         """,
         (scan_id,),
-    ).fetchall()
+    )
     candidates: list[Candidate] = []
     seen_nodes: set[int] = set()
 
-    for node in nodes:
-        if len(candidates) >= max_candidates:
+    while len(candidates) < max_candidates:
+        batch = nodes.fetchmany(2048)
+        if not batch:
             break
-        path = str(node["full_path"])
-        if protected_reason(path, protected_paths):
-            continue
-        for rule in rules:
-            if rule.path_regex.search(path) and (rule.backend != "file" or node["node_type"] == "file"):
-                candidates.append(candidate_from_rule(len(candidates) + 1, node, rule))
-                seen_nodes.add(int(node["id"]))
+        for node in batch:
+            if len(candidates) >= max_candidates:
                 break
+            path = str(node["full_path"])
+            if protected_reason(path, protected_paths):
+                continue
+            for rule in rules:
+                if rule.path_regex.search(path):
+                    candidates.append(candidate_from_rule(scan_id, node, rule))
+                    seen_nodes.add(int(node["id"]))
+                    break
 
-    for node in nodes:
-        if len(candidates) >= max_candidates:
-            break
-        if int(node["id"]) in seen_nodes:
-            continue
-        path = str(node["full_path"])
-        if protected_reason(path, protected_paths):
-            continue
-        if node["node_type"] == "file" and int(node["allocated_bytes"]) >= LARGE_FILE_THRESHOLD:
-            candidates.append(large_file_candidate(len(candidates) + 1, node))
+    if len(candidates) < max_candidates:
+        large_files = conn.execute(
+            """
+            SELECT id, full_path, name, node_type, allocated_bytes, subtree_allocated_bytes, modified_at, extension
+            FROM nodes
+            WHERE scan_id = ? AND node_type = 'file' AND allocated_bytes >= ?
+            ORDER BY allocated_bytes DESC
+            """,
+            (scan_id, LARGE_FILE_THRESHOLD),
+        )
+        while len(candidates) < max_candidates:
+            batch = large_files.fetchmany(512)
+            if not batch:
+                break
+            for node in batch:
+                if len(candidates) >= max_candidates:
+                    break
+                if int(node["id"]) in seen_nodes:
+                    continue
+                if protected_reason(str(node["full_path"]), protected_paths):
+                    continue
+                candidates.append(large_file_candidate(scan_id, node))
 
     return candidates
 
 
-def candidate_from_rule(index: int, node: sqlite3.Row, rule: Rule) -> Candidate:
+def stable_candidate_id(scan_id: int, node: sqlite3.Row, rule_id: str) -> str:
+    material = f"{scan_id}\0{node['full_path']}\0{node['node_type']}\0{rule_id}".encode("utf-8")
+    return "C" + hashlib.sha256(material).hexdigest()[:12].upper()
+
+
+def candidate_from_rule(scan_id: int, node: sqlite3.Row, rule: Rule) -> Candidate:
     reclaimable = int(node["subtree_allocated_bytes"])
     return Candidate(
-        candidate_id=f"C{index:04d}",
+        candidate_id=stable_candidate_id(scan_id, node, rule.id),
         node_id=int(node["id"]),
         title=str(node["name"]),
         category=rule.category,
         reclaimable_bytes=reclaimable,
         risk=rule.risk,
         confidence=rule.confidence,
-        recommended_action=rule.action,
-        backend=rule.backend,
+        recommended_action="recycle",
+        backend="file",
         default_selectable=rule.default_selectable,
         evidence=f"{rule.evidence} 路径: {node['full_path']}",
     )
 
 
-def large_file_candidate(index: int, node: sqlite3.Row) -> Candidate:
+def large_file_candidate(scan_id: int, node: sqlite3.Row) -> Candidate:
     return Candidate(
-        candidate_id=f"C{index:04d}",
+        candidate_id=stable_candidate_id(scan_id, node, "large-file-review"),
         node_id=int(node["id"]),
         title=str(node["name"]),
         category="large_file",
         reclaimable_bytes=int(node["allocated_bytes"]),
-        risk="medium",
+        risk="review",
         confidence=0.55,
         recommended_action="manual_review",
         backend="file",

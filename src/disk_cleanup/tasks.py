@@ -35,7 +35,7 @@ def create_task(workspace: Path, target: str, ttl_hours: int = 24) -> TaskRun:
         "target": target,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": expires.isoformat(),
-        "state": "AUDITED",
+        "state": "SCANNED",
     }
     metadata = root / "task.json"
     metadata.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -64,6 +64,23 @@ def update_task(task: TaskRun, **changes: object) -> dict[str, object]:
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(task.metadata_path)
     return payload
+
+
+TASK_TRANSITIONS = {
+    "SCANNED": {"PLANNED"},
+    "PLANNED": {"APPROVED", "NEEDS_REVIEW"},
+    "APPROVED": {"EXECUTING", "NEEDS_REVIEW"},
+    "EXECUTING": {"COMPLETED", "PARTIAL", "NEEDS_REVIEW"},
+    "NEEDS_REVIEW": {"PLANNED"},
+}
+
+
+def transition_task(task: TaskRun, new_state: str, **changes: object) -> dict[str, object]:
+    payload = json.loads(task.metadata_path.read_text(encoding="utf-8"))
+    current = str(payload.get("state", ""))
+    if new_state not in TASK_TRANSITIONS.get(current, set()):
+        raise ValueError(f"无效任务状态转换: {current} -> {new_state}")
+    return update_task(task, state=new_state, **changes)
 
 
 def finalize_task(workspace: Path, run_id: str) -> None:
