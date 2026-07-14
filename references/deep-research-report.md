@@ -1,5 +1,16 @@
 # 跨平台磁盘清理 Skill 平台深度研究与设计报告
 
+## 2026-07-14 Windows 实施复核快照
+
+本轮实现只保留 Windows 扫描分析和经审批的回收站清理。以下仓库已浅克隆到独立临时目录进行只读复核，均为 MIT 许可证；实现不复制其永久删除或自动下载逻辑。
+
+| 仓库 | 复核 commit |
+|---|---|
+| `KKKKhazix/khazix-skills` | `6529fbb3fbb387f91fe307914268c4c911f23cbd` |
+| `JayHome137/Storage-Analyzer` | `92d16462be694e8e1ed9797a03a31fd21fb34fb5` |
+| `WhiteMinds/disk-space-analyzer-skill` | `73ff91eb98dae11ec2ee7b118c417b5ec03c269d` |
+| `jcordon5/disk-cleaner-skill` | `231f9025d6bb3f62616c7927ff3baedc164a54aa` |
+
 ## Executive Summary
 
 现有“磁盘清理”相关 Skill 与相近仓库，已经形成了几条很清晰的路线：一条是 **只读扫描 + 三色分级 + HTML 报告**，代表是 `KKKKhazix/khazix-skills` 的 `storage-analyzer` 及其 Windows 适配 fork；一条是 **脚本化清理 + per-task dry-run/确认**，代表是 `haotianteng/FreeSpace`；一条是 **本地服务/仪表盘 + 审批后执行 + 审计日志**，代表是 `jcordon5/disk-cleaner-skill`；还有一条是 **面向 macOS 或开发者场景的深度清理/卸载/残留清扫**，代表是 `macsweep`、`Mole`、`devsweep` 等。官方与生态文档也已证明，Agent Skills/Plugins 本身就是“指令 + 脚本 +资源”的组合包，天然适合把“扫描、分析、计划、审批、执行、审计”拆成可组合模块。citeturn6view2turn6view3turn11view0turn9view3turn19view1turn29view0turn28view0turn28view1
