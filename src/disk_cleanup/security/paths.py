@@ -3,10 +3,20 @@ from __future__ import annotations
 import os
 import re
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 
 DEVICE_PREFIXES = ("\\\\?\\", "\\\\.\\", "\\\\")
 RESERVED_ROOTS = {"windows", "program files", "program files (x86)", "programdata", "recovery", "system volume information"}
+
+
+@dataclass(frozen=True)
+class HandleIdentity:
+    volume_serial: int
+    file_id: int
+    modified_ns: int
+    size_bytes: int
+    final_path: Path
 
 
 def canonical_local_path(value: str) -> Path:
@@ -16,6 +26,8 @@ def canonical_local_path(value: str) -> Path:
         raise ValueError("不允许设备、UNC 或 ADS 路径")
     if re.fullmatch(r"[A-Za-z]:", value):
         value += "\\"
+    if not Path(value).is_absolute():
+        raise ValueError("路径必须是绝对路径")
     path = Path(os.path.abspath(value))
     if not path.drive:
         raise ValueError("路径必须位于本地卷")
@@ -56,6 +68,114 @@ def assert_deletable(path_value: str, allowed_root: str, protected_roots: tuple[
     return path
 
 
+def assert_execution_target(
+    path_value: str,
+    allowed_root: str,
+    protected_roots: tuple[Path, ...] = (),
+    *,
+    allow_directory: bool = False,
+) -> tuple[Path, HandleIdentity]:
+    path = assert_deletable(path_value, allowed_root, protected_roots)
+    if not path.exists():
+        raise ValueError("目标不存在")
+    identity = handle_identity(path)
+    expected = canonical_local_path(str(path))
+    final = canonical_local_path(str(identity.final_path))
+    if os.path.normcase(str(expected)) != os.path.normcase(str(final)):
+        raise ValueError("句柄最终路径与计划路径不一致")
+    assert_local_fixed_ntfs(path)
+    if path.is_dir():
+        if not allow_directory:
+            raise ValueError("计划未授权清理目录")
+        assert_no_descendant_reparse_points(path)
+    elif not path.is_file():
+        raise ValueError("只允许普通文件或受控目录")
+    return path, identity
+
+
+def assert_no_descendant_reparse_points(root: Path) -> None:
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        with os.scandir(current) as entries:
+            for entry in entries:
+                info = entry.stat(follow_symlinks=False)
+                attrs = getattr(info, "st_file_attributes", 0)
+                if entry.is_symlink() or attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                    raise ValueError(f"目录包含 reparse point，拒绝清理: {entry.path}")
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+
+
+def assert_local_fixed_ntfs(path: Path) -> None:
+    if os.name != "nt":
+        raise ValueError("清理执行仅支持 Windows 本地固定 NTFS 卷")
+    import ctypes
+
+    root = path.anchor
+    if ctypes.windll.kernel32.GetDriveTypeW(root) != 3:  # DRIVE_FIXED
+        raise ValueError("清理只允许本地固定磁盘")
+    filesystem = ctypes.create_unicode_buffer(32)
+    ok = ctypes.windll.kernel32.GetVolumeInformationW(
+        root, None, 0, None, None, None, filesystem, len(filesystem)
+    )
+    if not ok or filesystem.value.casefold() != "ntfs":
+        raise ValueError("清理只允许 NTFS 文件系统")
+
+
 def file_identity(path: Path) -> tuple[int | None, int | None, int, int]:
+    if os.name == "nt":
+        identity = handle_identity(path)
+        return identity.volume_serial, identity.file_id, identity.modified_ns, identity.size_bytes
     info = path.stat(follow_symlinks=False)
     return getattr(info, "st_dev", None), getattr(info, "st_ino", None), info.st_mtime_ns, info.st_size
+
+
+def handle_identity(path: Path) -> HandleIdentity:
+    if os.name != "nt":
+        info = path.stat(follow_symlinks=False)
+        return HandleIdentity(
+            int(getattr(info, "st_dev", 0)), int(getattr(info, "st_ino", 0)),
+            info.st_mtime_ns, info.st_size, path.resolve(strict=True),
+        )
+    import ctypes
+    from ctypes import wintypes
+
+    class BY_HANDLE_FILE_INFORMATION(ctypes.Structure):
+        _fields_ = [
+            ("dwFileAttributes", wintypes.DWORD), ("ftCreationTime", wintypes.FILETIME),
+            ("ftLastAccessTime", wintypes.FILETIME), ("ftLastWriteTime", wintypes.FILETIME),
+            ("dwVolumeSerialNumber", wintypes.DWORD), ("nFileSizeHigh", wintypes.DWORD),
+            ("nFileSizeLow", wintypes.DWORD), ("nNumberOfLinks", wintypes.DWORD),
+            ("nFileIndexHigh", wintypes.DWORD), ("nFileIndexLow", wintypes.DWORD),
+        ]
+
+    create_file = ctypes.windll.kernel32.CreateFileW
+    create_file.restype = wintypes.HANDLE
+    handle = create_file(str(path), 0x80, 0x1 | 0x2 | 0x4, None, 3, 0x02000000 | 0x00200000, None)
+    invalid = ctypes.c_void_p(-1).value
+    if handle == invalid:
+        raise OSError(ctypes.get_last_error(), "无法打开目标句柄")
+    try:
+        details = BY_HANDLE_FILE_INFORMATION()
+        if not ctypes.windll.kernel32.GetFileInformationByHandle(handle, ctypes.byref(details)):
+            raise OSError(ctypes.get_last_error(), "无法读取目标文件身份")
+        required = ctypes.windll.kernel32.GetFinalPathNameByHandleW(handle, None, 0, 0)
+        if not required:
+            raise OSError(ctypes.get_last_error(), "无法读取目标最终路径")
+        buffer = ctypes.create_unicode_buffer(required + 1)
+        if not ctypes.windll.kernel32.GetFinalPathNameByHandleW(handle, buffer, len(buffer), 0):
+            raise OSError(ctypes.get_last_error(), "无法读取目标最终路径")
+        final_path = buffer.value
+        if final_path.startswith("\\\\?\\"):
+            final_path = final_path[4:]
+        modified_ticks = (details.ftLastWriteTime.dwHighDateTime << 32) | details.ftLastWriteTime.dwLowDateTime
+        return HandleIdentity(
+            details.dwVolumeSerialNumber,
+            (details.nFileIndexHigh << 32) | details.nFileIndexLow,
+            max(0, modified_ticks - 116444736000000000) * 100,
+            (details.nFileSizeHigh << 32) | details.nFileSizeLow,
+            Path(final_path),
+        )
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
