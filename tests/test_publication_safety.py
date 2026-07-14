@@ -40,7 +40,7 @@ def test_tracked_files_do_not_include_private_machine_markers() -> None:
 
     leaks: list[str] = []
     for path in tracked_files():
-        if not path.exists():
+        if not path.is_file():
             continue
         try:
             text = path.read_text(encoding="utf-8")

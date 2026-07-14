@@ -1,4 +1,4 @@
 interface:
   display_name: "Windows 磁盘审查与清理"
-  short_description: "先审查磁盘，再通过不可变计划将确认项移入回收站"
-  default_prompt: "使用 $disk-cleanup-skills 分两阶段审查 Windows 磁盘并安全清理。先只扫描和解释候选项，等待我选择后再生成计划并要求明确确认。"
+  short_description: "只读扫描磁盘，经独立审批后将确认项移入回收站"
+  default_prompt: "使用 $disk-cleanup-skills 扫描并分析 Windows 磁盘。清理时先生成不可变计划并停止，只有在我下一轮明确批准后才把计划内项目移入回收站。"

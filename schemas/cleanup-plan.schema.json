@@ -1,49 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local.disk-cleanup-skills/cleanup-plan.schema.json",
-  "title": "cleanup plan",
+  "title": "Windows Recycle Bin cleanup plan",
   "type": "object",
-  "required": ["plan_id", "scan_id", "created_at", "expected_reclaim_bytes", "actions", "plan_hash", "run_id", "expires_at"],
+  "required": [
+    "plan_id", "run_id", "scan_id", "created_at", "expires_at",
+    "risk_batch", "approval_expires_at", "allowed_root", "scan_fingerprint",
+    "rule_pack_hash", "scan_truncated", "expected_reclaim_bytes",
+    "actions", "plan_hash"
+  ],
   "additionalProperties": false,
   "properties": {
     "plan_id": { "type": "string", "minLength": 1 },
+    "run_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
     "scan_id": { "type": "integer", "minimum": 1 },
-    "created_at": { "type": "string", "minLength": 1 },
-    "expected_reclaim_bytes": { "type": "integer", "minimum": 0 },
-    "plan_hash": { "type": "string", "minLength": 32 },
-    "run_id": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
     "expires_at": { "type": "string" },
+    "risk_batch": { "enum": ["safe_cache", "safe_redownload"] },
+    "approval_expires_at": { "type": "string", "format": "date-time" },
+    "approval_code": { "type": "string", "pattern": "^RECYCLE [0-9A-F]{8}$" },
+    "allowed_root": { "type": "string" },
+    "scan_fingerprint": { "type": "string" },
+    "rule_pack_hash": { "type": "string" },
+    "scan_truncated": { "type": "boolean" },
+    "expected_reclaim_bytes": { "type": "integer", "minimum": 0 },
+    "plan_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "actions": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
         "required": [
-          "candidate_id",
-          "node_id",
-          "backend",
-          "action_type",
-          "action_value",
-          "path",
-          "risk",
-          "expected_reclaim_bytes"
-          ,"volume_serial"
-          ,"file_id"
-          ,"modified_ns"
+          "candidate_id", "node_id", "backend", "action_type", "action_value",
+          "path", "risk", "expected_reclaim_bytes", "volume_serial", "file_id",
+          "modified_ns", "size_bytes", "node_type", "tree_digest", "descendant_count"
         ],
         "additionalProperties": false,
         "properties": {
-          "candidate_id": { "type": "string", "pattern": "^C[0-9]{4,}$" },
+          "candidate_id": { "type": "string", "pattern": "^C[0-9A-F]{12}$" },
           "node_id": { "type": "integer", "minimum": 1 },
-          "backend": { "type": "string", "const": "file" },
-          "action_type": { "type": "string", "const": "recycle" },
+          "backend": { "const": "file" },
+          "action_type": { "const": "recycle" },
           "action_value": { "type": "string", "minLength": 1 },
           "path": { "type": "string", "minLength": 1 },
-          "risk": { "type": "string", "enum": ["low", "medium", "high"] },
-          "expected_reclaim_bytes": { "type": "integer", "minimum": 0 }
-          ,"volume_serial": { "type": ["integer", "null"] }
-          ,"file_id": { "type": ["integer", "null"] }
-          ,"modified_ns": { "type": ["integer", "null"] }
+          "risk": { "enum": ["safe_cache", "safe_redownload"] },
+          "expected_reclaim_bytes": { "type": "integer", "minimum": 0 },
+          "volume_serial": { "type": ["integer", "null"] },
+          "file_id": { "type": ["integer", "null"] },
+          "modified_ns": { "type": ["integer", "null"] },
+          "size_bytes": { "type": ["integer", "null"] },
+          "node_type": { "enum": ["file", "directory"] },
+          "tree_digest": { "type": "string" },
+          "descendant_count": { "type": "integer", "minimum": 0 }
         }
       }
     }

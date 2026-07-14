@@ -2,14 +2,14 @@
 
 [English README](README.en.md)
 
-面向 Windows 的两阶段磁盘审查与安全清理 Skill。第一阶段使用 WizTree 建立磁盘索引并生成候选项；第二阶段只根据同一任务中的 candidate_id 生成不可变计划，经用户明确确认后将文件移入 Windows 回收站。
+面向 Windows 的磁盘扫描与安全清理 Skill。对外仅提供 `scan` 和 `clean`：前者只读分析，后者只根据同一任务的候选 ID 生成不可变计划，并在下一轮明确审批后把文件或受控目录移入 Windows 回收站。
 
 ## 安全边界
 
 - 审查与删除严格分离，审查阶段不会修改文件系统。
 - 删除入口只接受 run_id、candidate_id、plan_hash 和确认短语，不接受任意路径或命令。
 - 删除前重新验证扫描根、保护目录、reparse point、文件 ID 和修改时间。
-- 当前执行器只回收单个文件，不递归删除目录。
+- 执行器支持文件和经过重解析点复核的受控目录。
 - 回收站操作失败时不会降级为永久删除。
 - Web 页面只用于审查；真实删除只能通过本项目 CLI 执行。
 - 不执行 BleachBit cleaner，不使用 Remove-Item、rd 或 Shell COM 作为回退。
@@ -20,10 +20,10 @@
 
 - Windows 10/11
 - Python 3.11 或更高版本
-- WizTree 64 位版本
+- WizTree 64 位版本（可选，整盘扫描推荐）
 - PowerShell 5.1 或更高版本
 
-项目不包含 WizTree。请从其官方渠道获取，并遵守 WizTree 自身许可。
+项目不包含 WizTree。缺失时会使用较慢的只读流式遍历；如需整盘高速扫描，请从官方渠道获取 WizTree 并遵守其许可。
 
 ## 快速开始
 
@@ -33,24 +33,18 @@
 $env:DISK_CLEAN_WIZTREE = "C:\Tools\WizTree\WizTree64.exe"
 ~~~
 
-验证 Skill：
-
-~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode validate
-~~~
-
-### 第一阶段：审查
+### 第一阶段：扫描
 
 扫描本地磁盘并创建有效期为24小时的任务：
 
 ~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode audit -Target "C:"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode scan -Target "C:"
 ~~~
 
 便携版或非标准安装位置应显式传入路径：
 
 ~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode audit -Target "C:" -WizTreePath "C:\Tools\WizTree\WizTree64.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode scan -Target "C:" -WizTreePath "C:\Tools\WizTree\WizTree64.exe"
 ~~~
 
 默认 ExportMaxDepth 为 0，即不限制导出深度。对全盘扫描可能需要数分钟；脚本会等待 WizTree 完成 CSV 导出，然后自动输出目录、文件、扩展名和清理候选分析。若只出现 WizTree 界面而没有继续，请确认使用的是包含 PowerShell 5.1 兼容修复的当前版本。
@@ -58,29 +52,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -M
 也可以导入已有 WizTree CSV：
 
 ~~~powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode audit -Target "C:" -CsvPath "C:\path\to\wiztree-export.csv"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -Mode scan -Target "C:" -CsvPath "C:\path\to\wiztree-export.csv"
 ~~~
 
 命令返回 run_id。运行数据保存在 LOCALAPPDATA 下的 DiskCleanupSkill/runs 目录，过期后自动清理。
 
-查看候选项：
+候选项会同时出现在命令输出和只读本地 HTML 报告中。
 
-~~~powershell
-.\scripts\invoke-once.ps1 -Mode review -RunId "<run_id>"
-~~~
-
-### 第二阶段：计划与删除
+### 第二阶段：计划与清理
 
 只选择审查结果中的候选 ID：
 
 ~~~powershell
-.\scripts\invoke-once.ps1 -Mode plan -RunId "<run_id>" -CandidateId "C0001","C0002"
+.\scripts\invoke-once.ps1 -Mode clean -RunId "<run_id>" -CandidateId "C0123456789AB","CABCDEF012345"
 ~~~
 
 核对输出中的每条精确路径、风险和 plan_hash 后，使用命令提示的确认短语执行：
 
 ~~~powershell
-.\scripts\invoke-once.ps1 -Mode execute -RunId "<run_id>" -PlanHash "<plan_hash>" -Confirmation "DELETE <short-id>"
+.\scripts\invoke-once.ps1 -Mode clean -RunId "<run_id>" -PlanHash "<plan_hash>" -ApprovalCode "RECYCLE <code>"
 ~~~
 
 结果状态：
@@ -90,11 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 -M
 - FAILED：Windows 回收站调用失败。
 - UNKNOWN：无法可靠确认结果，不应当作成功处理。
 
-完成后销毁任务数据：
-
-~~~powershell
-.\scripts\invoke-once.ps1 -Mode finalize -RunId "<run_id>"
-~~~
+任务数据在 24 小时后自动过期。审批码有效期为 10 分钟且只能使用一次。
 
 ## 本地配置与隐私
 
@@ -119,7 +105,7 @@ git grep -n -I -E "Users\\|[A-Z]:\\|api[_-]?key|password|secret|token"
 ~~~powershell
 $env:PYTHONPATH = "src"
 python -m pytest tests --basetemp .pytest_tmp
-python -m disk_cleanup validate
+python -m compileall -q src tests
 ~~~
 
 项目结构：

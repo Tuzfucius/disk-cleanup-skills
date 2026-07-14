@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.disk-cleanup-skills/scan-result.schema.json",
+  "title": "Windows disk scan result",
+  "type": "object",
+  "required": ["run_id", "expires_at", "provider", "completeness", "scan", "cleanup_candidates", "report_url"],
+  "properties": {
+    "run_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "provider": { "enum": ["wiztree", "wiztree_csv", "scandir"] },
+    "completeness": {
+      "type": "object",
+      "required": ["truncated", "reason", "errors"],
+      "properties": {
+        "truncated": { "type": "boolean" },
+        "reason": { "type": ["string", "null"] },
+        "errors": { "type": "array" }
+      }
+    },
+    "scan": { "type": "object" },
+    "cleanup_candidates": { "type": "array" },
+    "report_url": { "type": ["string", "null"] }
+  }
+}

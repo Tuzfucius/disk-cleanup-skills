@@ -26,3 +26,19 @@ reason = "系统分页文件"
 pattern = "(?i)^C:\\\\hiberfil\\.sys$"
 reason = "系统休眠文件"
 
+[[path]]
+pattern = "(?i)\\\\(OneDrive|Dropbox|Google Drive)(\\\\|$)"
+reason = "云同步目录，删除可能传播到其他设备"
+
+[[path]]
+pattern = "(?i)\\\\Users\\\\[^\\\\]+\\\\(Documents|Desktop|Pictures)(\\\\|$)"
+reason = "用户重要资料目录"
+
+[[path]]
+pattern = '(?i)\\Users\\[^\\]+\\\.ssh(\\|$)'
+reason = "用户凭据目录"
+
+[[path]]
+pattern = "(?i)\\\\User Data\\\\[^\\\\]+\\\\(Cookies|Login Data|Web Data|History)$"
+reason = "浏览器身份或隐私数据"
+

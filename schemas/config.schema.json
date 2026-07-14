@@ -3,7 +3,7 @@
   "$id": "https://local.disk-cleanup-skills/config.schema.json",
   "title": "disk-cleanup-skills config",
   "type": "object",
-  "required": ["config_version", "tools", "scan", "storage", "cleanup", "logging"],
+  "required": ["config_version", "tools", "scan", "storage", "logging"],
   "additionalProperties": false,
   "properties": {
     "config_version": { "type": "integer", "const": 1 },
@@ -17,14 +17,10 @@
     },
     "scan": {
       "type": "object",
-      "required": ["targets", "request_admin", "include_files", "include_folders", "sort_by", "retain_scan_count"],
+      "required": ["targets", "retain_scan_count"],
       "additionalProperties": false,
       "properties": {
         "targets": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
-        "request_admin": { "type": "boolean" },
-        "include_files": { "type": "boolean" },
-        "include_folders": { "type": "boolean" },
-        "sort_by": { "type": "string" },
         "retain_scan_count": { "type": "integer", "minimum": 1 }
       }
     },
@@ -35,16 +31,6 @@
       "properties": {
         "workspace": { "type": "string", "minLength": 1 },
         "database_name": { "type": "string", "minLength": 1 }
-      }
-    },
-    "cleanup": {
-      "type": "object",
-      "required": ["file_delete_mode", "require_preview", "verify_after_cleanup"],
-      "additionalProperties": false,
-      "properties": {
-        "file_delete_mode": { "type": "string", "const": "recycle_bin" },
-        "require_preview": { "type": "boolean", "const": true },
-        "verify_after_cleanup": { "type": "boolean", "const": true }
       }
     },
     "logging": {

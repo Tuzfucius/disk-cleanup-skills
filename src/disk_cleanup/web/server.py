@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from disk_cleanup.cleaner.session import CleanupSessionError
 from disk_cleanup.web.api import AuditApi
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -41,8 +40,9 @@ def serve_forever(
     allowed_root: str = "C:\\",
     run_id: str = "",
     expires_at: str = "",
+    token: str | None = None,
 ) -> None:
-    server = create_server(db_path, scan_id, host, port, allowed_root=allowed_root, run_id=run_id, expires_at=expires_at)
+    server = create_server(db_path, scan_id, host, port, token=token, allowed_root=allowed_root, run_id=run_id, expires_at=expires_at)
     print(f"审计界面: {server.url}")
     if open_browser:
         webbrowser.open(server.url)
@@ -95,27 +95,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self.write_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path.startswith("/api/") and not self.authorized(parsed):
-            self.write_json({"error": "unauthorized"}, HTTPStatus.UNAUTHORIZED)
-            return
-
-        try:
-            payload = self.read_json()
-            if parsed.path == "/api/selection":
-                self.write_json(self.server.api.selection(payload))
-            elif parsed.path == "/api/preview":
-                self.write_json(self.server.api.preview())
-            elif parsed.path == "/api/confirm":
-                self.write_json(self.server.api.confirm(payload))
-            elif parsed.path == "/api/execute":
-                self.write_json(self.server.api.execute(payload))
-            else:
-                self.write_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-        except CleanupSessionError as exc:
-            self.write_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
-        except json.JSONDecodeError:
-            self.write_json({"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+        self.write_json({"error": "read-only server"}, HTTPStatus.METHOD_NOT_ALLOWED)
 
     def authorized(self, parsed) -> bool:
         query = parse_qs(parsed.query)

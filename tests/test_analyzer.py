@@ -16,10 +16,14 @@ def test_analyze_scan_generates_candidates_and_context(tmp_path: Path) -> None:
 
     analysis = analyze_scan(db_path, summary.scan_id, context_path=context_path)
     rows = candidate_rows(db_path, summary.scan_id)
+    first_ids = [row["candidate_id"] for row in rows]
+    analyze_scan(db_path, summary.scan_id)
+    second_ids = [row["candidate_id"] for row in candidate_rows(db_path, summary.scan_id)]
 
     assert analysis.candidate_count >= 1
     assert context_path.exists()
     assert any(row["category"] == "large_file" for row in rows) is False
+    assert first_ids == second_ids
 
 
 def test_protected_windows_path_is_not_candidate(tmp_path: Path) -> None:

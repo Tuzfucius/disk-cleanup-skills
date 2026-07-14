@@ -1,19 +1,18 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("audit", "review", "plan", "execute", "finalize", "validate")]
-    [string]$Mode = "audit",
+    [ValidateSet("scan", "clean")]
+    [string]$Mode = "scan",
     [string]$CsvPath,
     [string]$Target = "C:",
     [string]$WizTreePath,
     [string]$Python = "python",
     [ValidateRange(0, 100)]
     [int]$ExportMaxDepth = 0,
-    [switch]$Admin,
     [switch]$NoOpen
     ,[string]$RunId
     ,[string[]]$CandidateId
     ,[string]$PlanHash
-    ,[string]$Confirmation
+    ,[string]$ApprovalCode
 )
 
 $ErrorActionPreference = "Stop"
@@ -105,7 +104,7 @@ try {
     $ContextPath = Join-Path $RunRoot "agent-context.json"
 
     if (-not $env:LOCALAPPDATA) { throw "LOCALAPPDATA is not available in this PowerShell session." }
-    if ($Mode -eq "audit" -and -not $CsvPath) { Resolve-WizTreeExecutable }
+    if ($Mode -eq "scan" -and -not $CsvPath) { Resolve-WizTreeExecutable }
     if (-not $WizTreePath) { $script:WizTreePath = "WizTree64.exe" }
     $PersistentWorkspace = Join-Path $env:LOCALAPPDATA "DiskCleanupSkill"
     $configText = @"
@@ -116,20 +115,11 @@ wiztree_executable = "$(Convert-ToTomlPath $WizTreePath)"
 
 [scan]
 targets = ["$(Convert-ToTomlPath $Target)"]
-request_admin = $($Admin.IsPresent.ToString().ToLowerInvariant())
-include_files = true
-include_folders = true
-sort_by = "allocated"
 retain_scan_count = 1
 
 [storage]
 workspace = "$(Convert-ToTomlPath $PersistentWorkspace)"
 database_name = "disk-audit.sqlite3"
-
-[cleanup]
-file_delete_mode = "recycle_bin"
-require_preview = true
-verify_after_cleanup = true
 
 [logging]
 level = "INFO"
@@ -140,30 +130,27 @@ retain_days = 1
 
     $env:PYTHONPATH = Join-Path $ProjectRoot "src"
 
-    if ($Mode -eq "validate") {
-        & $Python -m disk_cleanup validate
-        exit $LASTEXITCODE
-    }
-
-    if ($Mode -in @("review", "plan", "execute", "finalize")) {
-        if (-not $RunId) { throw "$Mode requires -RunId" }
-        $argsList = @("-m", "disk_cleanup", "--config", $ConfigPath, $Mode, "--run-id", $RunId)
-        if ($Mode -eq "review") { $argsList += @("--limit", "100") }
-        if ($Mode -eq "plan") {
-            if (-not $CandidateId) { throw "plan requires -CandidateId" }
+    if ($Mode -eq "clean") {
+        if (-not $RunId) { throw "clean requires -RunId" }
+        $argsList = @("-m", "disk_cleanup", "--config", $ConfigPath, "clean", "--run-id", $RunId)
+        if ($CandidateId) {
             foreach ($id in $CandidateId) { $argsList += @("--candidate-id", $id) }
         }
-        if ($Mode -eq "execute") { $argsList += @("--plan-hash", $PlanHash, "--confirmation", $Confirmation) }
+        elseif ($PlanHash -and $ApprovalCode) {
+            $argsList += @("--plan-hash", $PlanHash, "--approval-code", $ApprovalCode)
+        }
+        else { throw "clean requires -CandidateId, or -PlanHash with -ApprovalCode" }
         & $Python @argsList
         exit $LASTEXITCODE
     }
 
-    if (-not $CsvPath) {
-        $CsvPath = Join-Path $RunRoot "wiztree-export.csv"
-        Export-WizTreeCsv $CsvPath
+    $argsList = @("-m", "disk_cleanup", "--config", $ConfigPath, "scan", "--target", $Target)
+    if ($CsvPath) { $argsList += @("--csv", $CsvPath) }
+    elseif ($WizTreePath -and (Test-Path -LiteralPath $WizTreePath -PathType Leaf)) {
+        $argsList += @("--wiztree", $WizTreePath)
     }
-
-    & $Python -m disk_cleanup --config $ConfigPath audit --csv $CsvPath --target $Target --configured-max-depth $ExportMaxDepth
+    if ($NoOpen) { $argsList += "--no-open" }
+    & $Python @argsList
     exit $LASTEXITCODE
 }
 catch {

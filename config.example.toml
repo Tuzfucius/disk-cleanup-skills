@@ -5,20 +5,11 @@ wiztree_executable = "C:\\Program Files\\WizTree\\WizTree64.exe"
 
 [scan]
 targets = ["C:"]
-request_admin = false
-include_files = true
-include_folders = true
-sort_by = "allocated"
 retain_scan_count = 5
 
 [storage]
 workspace = "%LOCALAPPDATA%\\DiskCleanupSkill"
 database_name = "index.sqlite3"
-
-[cleanup]
-file_delete_mode = "recycle_bin"
-require_preview = true
-verify_after_cleanup = true
 
 [logging]
 level = "INFO"

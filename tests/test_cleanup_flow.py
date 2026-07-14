@@ -14,6 +14,15 @@ from disk_cleanup.indexer.queries import candidate_rows
 from disk_cleanup.web.server import create_server, start_in_thread
 
 
+class FakeRecycleBackend:
+    def __init__(self) -> None:
+        self.paths: list[Path] = []
+
+    def recycle(self, path: Path) -> None:
+        self.paths.append(path)
+        path.rename(path.with_name(path.name + ".recycled"))
+
+
 def test_cleanup_session_requires_preview_and_confirm(tmp_path: Path) -> None:
     db_path, scan_id, candidate_id, allowed_root = prepare_candidates(tmp_path)
     session = CleanupSession(db_path=db_path, scan_id=scan_id, allowed_root=str(allowed_root), run_id="a" * 32)
@@ -27,29 +36,32 @@ def test_cleanup_session_requires_preview_and_confirm(tmp_path: Path) -> None:
 
     preview = session.generate_preview()
     plan_hash = preview["plan"]["plan_hash"]
+    approval_code = preview["plan"]["approval_code"]
     try:
         session.execute(plan_hash)
         raise AssertionError("execute should fail before confirm")
     except CleanupSessionError:
         pass
 
-    session.confirm(plan_hash)
     try:
-        session.execute(plan_hash, "wrong")
+        session.confirm(plan_hash, "RECYCLE WRONG")
         raise AssertionError("execute should require exact confirmation")
     except CleanupSessionError:
         pass
-    result = session.execute(plan_hash, "DELETE aaaaaaaa")
+    session.confirm(plan_hash, approval_code)
+    backend = FakeRecycleBackend()
+    result = session.execute(plan_hash, backend=backend)
 
     assert result["state"] == "COMPLETED"
     assert result["result"]["execution_status"] == "COMPLETED"
     assert result["result"]["actions"][0]["execution_status"] == "RECYCLED"
+    assert backend.paths
 
 
 def test_cleanup_plan_rejects_unknown_candidate(tmp_path: Path) -> None:
     db_path, scan_id, _candidate_id, _root = prepare_candidates(tmp_path)
     try:
-        create_cleanup_plan(db_path, scan_id, ["C9999"])
+        create_cleanup_plan(db_path, scan_id, ["CFFFFFFFFFFFF"])
         raise AssertionError("unknown candidate should fail")
     except CleanupPlanError as exc:
         assert "未知候选项" in str(exc)
@@ -57,7 +69,7 @@ def test_cleanup_plan_rejects_unknown_candidate(tmp_path: Path) -> None:
 
 def test_cleanup_plan_matches_public_schema(tmp_path: Path) -> None:
     db_path, scan_id, candidate_id, _root = prepare_candidates(tmp_path)
-    plan = create_cleanup_plan(db_path, scan_id, [candidate_id])
+    plan = create_cleanup_plan(db_path, scan_id, [candidate_id], run_id="a" * 32)
     payload = plan_to_dict(plan)
     schema = json.loads((Path(__file__).resolve().parents[1] / "schemas" / "cleanup-plan.schema.json").read_text(encoding="utf-8"))
 
@@ -80,7 +92,7 @@ def test_cleanup_api_rejects_path_injection(tmp_path: Path) -> None:
             urlopen(request, timeout=5)
             raise AssertionError("path injection should fail")
         except HTTPError as exc:
-            assert exc.code == 400
+            assert exc.code == 405
     finally:
         server.shutdown()
         server.server_close()
@@ -100,8 +112,12 @@ def prepare_candidates(tmp_path: Path) -> tuple[Path, int, str, Path]:
     import sqlite3
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "UPDATE nodes SET full_path = ? WHERE id = (SELECT node_id FROM candidates WHERE scan_id = ? AND candidate_id = ?)",
+            "UPDATE nodes SET full_path = ?, node_type = 'file' WHERE id = (SELECT node_id FROM candidates WHERE scan_id = ? AND candidate_id = ?)",
             (str(cache_file), summary.scan_id, candidate_id),
+        )
+        conn.execute(
+            "UPDATE candidates SET risk = 'safe_cache' WHERE scan_id = ? AND candidate_id = ?",
+            (summary.scan_id, candidate_id),
         )
     return db_path, summary.scan_id, candidate_id, target
 

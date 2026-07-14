@@ -5,6 +5,8 @@
   --text: #20242c;
   --muted: #667085;
   --accent: #0b6bcb;
+  --selected: #eef6ff;
+  --output-bg: #f2f4f7;
   --risk-low: #176b3a;
   --risk-medium: #946200;
   --risk-high: #b42318;
@@ -114,7 +116,7 @@ dd {
 }
 
 .candidate.selected {
-  background: #eef6ff;
+  background: var(--selected);
 }
 
 .candidate label {
@@ -151,7 +153,7 @@ button:disabled {
   padding: var(--space-1);
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #f2f4f7;
+  background: var(--output-bg);
   white-space: pre-wrap;
 }
 
@@ -177,15 +179,16 @@ button:disabled {
   white-space: nowrap;
 }
 
-.risk-low {
+.risk-safe_cache {
   color: var(--risk-low);
 }
 
-.risk-medium {
+.risk-safe_redownload,
+.risk-review {
   color: var(--risk-medium);
 }
 
-.risk-high {
+.risk-protected {
   color: var(--risk-high);
 }
 

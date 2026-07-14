@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import codecs
 import csv
-import io
+import locale
+from contextlib import contextmanager
+from itertools import chain
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 from disk_cleanup.models import ScanMetadata, WizTreeNode
 
@@ -29,19 +32,33 @@ HEADER_ALIASES = (
     ),
 )
 
+_ENCODING_SAMPLE_BYTES = 64 * 1024
 
-def read_wiztree_csv(csv_path: Path) -> tuple[ScanMetadata, list[WizTreeNode]]:
-    text = decode_wiztree_csv(csv_path)
-    with io.StringIO(text, newline="") as handle:
+
+@contextmanager
+def stream_wiztree_csv(csv_path: Path) -> Iterator[tuple[ScanMetadata, Iterator[WizTreeNode]]]:
+    """Open a WizTree export and yield metadata plus a lazy node iterator.
+
+    The file remains open for the duration of the context. Only a bounded sample is
+    read for encoding detection; rows are decoded and parsed as the caller consumes
+    them.
+    """
+    encoding = detect_wiztree_encoding(csv_path)
+    with csv_path.open("r", encoding=encoding, newline="") as handle:
         reader = csv.reader(handle)
         generated_by = next(reader, [""])[0]
         header = next(reader, [])
         validate_header(header)
-        rows = list(reader)
+        first_row = next((row for row in reader if row), None)
+        metadata = build_metadata(csv_path, generated_by, first_row)
+        rows = chain((first_row,), reader) if first_row is not None else iter(())
+        yield metadata, (parse_row(row) for row in rows if row)
 
-    nodes = [parse_row(row) for row in rows if row]
-    metadata = build_metadata(csv_path, generated_by, rows)
-    return metadata, nodes
+
+def read_wiztree_csv(csv_path: Path) -> tuple[ScanMetadata, list[WizTreeNode]]:
+    """Compatibility helper for callers that intentionally need all nodes."""
+    with stream_wiztree_csv(csv_path) as (metadata, nodes):
+        return metadata, list(nodes)
 
 
 def validate_header(header: Iterable[str]) -> None:
@@ -50,20 +67,44 @@ def validate_header(header: Iterable[str]) -> None:
         raise ValueError(f"WizTree CSV 表头不受支持: {', '.join(actual)}")
 
 
-def decode_wiztree_csv(csv_path: Path) -> str:
-    payload = csv_path.read_bytes()
-    encodings = ("utf-8-sig", "utf-16", "mbcs")
-    errors: list[str] = []
-    for encoding in encodings:
+def detect_wiztree_encoding(csv_path: Path) -> str:
+    with csv_path.open("rb") as handle:
+        sample = handle.read(_ENCODING_SAMPLE_BYTES)
+
+    if sample.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+        return "utf-16"
+    if sample.startswith(codecs.BOM_UTF8):
+        return "utf-8-sig"
+    if sample[:4].count(b"\x00") >= 2:
+        return "utf-16"
+
+    try:
+        sample.decode("utf-8")
+        return "utf-8-sig"
+    except UnicodeDecodeError:
+        preferred = locale.getpreferredencoding(False)
+        # mbcs is available on Windows; the locale fallback keeps parser tests
+        # usable on other platforms without changing Windows behaviour.
         try:
-            return payload.decode(encoding)
-        except (UnicodeDecodeError, LookupError) as exc:
-            errors.append(f"{encoding}: {exc}")
-    raise ValueError("无法识别 WizTree CSV 编码: " + "; ".join(errors))
+            codecs.lookup("mbcs")
+        except LookupError:
+            return preferred
+        return "mbcs"
 
 
-def build_metadata(csv_path: Path, generated_by: str, rows: list[list[str]]) -> ScanMetadata:
-    root = rows[0] if rows else []
+def decode_wiztree_csv(csv_path: Path) -> str:
+    """Legacy full-text decoder retained for API compatibility."""
+    return csv_path.read_text(encoding=detect_wiztree_encoding(csv_path))
+
+
+def build_metadata(
+    csv_path: Path,
+    generated_by: str,
+    root: list[str] | list[list[str]] | None,
+) -> ScanMetadata:
+    root = root or []
+    if root and isinstance(root[0], list):
+        root = root[0]
     return ScanMetadata(
         source=str(csv_path),
         generated_by=generated_by,
@@ -135,6 +176,7 @@ def basename(path: str) -> str:
 
 
 def parent_path(path: str, node_type: str) -> str | None:
+    del node_type  # Retained in the public signature for compatibility.
     stripped = path.rstrip("\\")
     if stripped.endswith(":"):
         return None
@@ -153,4 +195,3 @@ def extension_for(path: str, node_type: str) -> str:
     if "." not in name or name.endswith("."):
         return ""
     return "." + name.rsplit(".", 1)[-1].lower()
-
