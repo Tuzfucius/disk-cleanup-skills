@@ -9,29 +9,23 @@ def test_load_config_from_explicit_path(tmp_path: Path) -> None:
     wiztree = tmp_path / "WizTree64.exe"
     wiztree.write_text("", encoding="utf-8")
     config_path = tmp_path / "config.toml"
+    wiztree_toml = str(wiztree).replace("\\", "\\\\")
+    workspace_toml = str(tmp_path).replace("\\", "\\\\")
     config_path.write_text(
         f"""
 config_version = 1
 
 [tools]
-wiztree_executable = "{str(wiztree).replace("\\", "\\\\")}"
+wiztree_executable = "{wiztree_toml}"
 
 [scan]
 targets = ["C:"]
-request_admin = true
-include_files = true
-include_folders = true
-sort_by = "allocated"
 retain_scan_count = 5
 
 [storage]
-workspace = "{str(tmp_path).replace("\\", "\\\\")}"
+workspace = "{workspace_toml}"
 database_name = "index.sqlite3"
 
-[cleanup]
-file_delete_mode = "recycle_bin"
-require_preview = true
-verify_after_cleanup = true
 """,
         encoding="utf-8",
     )

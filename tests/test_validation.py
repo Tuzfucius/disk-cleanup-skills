@@ -27,6 +27,7 @@ def test_schema_files_are_valid_json() -> None:
         "agent-context.schema.json",
         "cleanup-plan.schema.json",
         "config.schema.json",
+        "scan-result.schema.json",
     }
 
     for path in schema_dir.glob("*.json"):
