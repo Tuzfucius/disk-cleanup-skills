@@ -1,27 +1,30 @@
 # Disk Clean Workflow
 
-Use this workflow only after a completed audit. It performs controlled, recoverable deletion through the Windows Recycle Bin.
+Use this workflow only after a completed scan. It performs controlled moves to the Windows Recycle Bin.
 
-## One-Shot Steps
+## Required Two-Turn Flow
 
 1. Load the existing `run_id`; never substitute a path supplied during stage two.
 2. Review candidates and let the user select `candidate_id` values.
-3. Generate an immutable plan and show every exact path, estimated size, risk, and protection result.
-4. Require the matching `plan_hash` and displayed `DELETE <short-id>` phrase.
-5. Execute through the bundled CLI only. Do not use shell deletion as a fallback.
-6. Report every item as `RECYCLED`, `BLOCKED`, `FAILED`, or `UNKNOWN` and verify the original path.
-7. Finalize the task when the user is finished.
+3. Generate an immutable plan and show every exact path, item kind, estimated bytes, risk, and protection result.
+4. Stop. A planning request or vague instruction is not approval to execute.
+5. In a later user turn, require the matching `plan_hash` and generated `RECYCLE <code>` approval code. The code is single-use and expires after 10 minutes.
+6. Execute through the bundled CLI only. Never use permanent deletion or a shell fallback.
+7. Report every item as `RECYCLED`, `BLOCKED`, `FAILED`, or `UNKNOWN`. Describe bytes as moved to the Recycle Bin, not released disk space.
 
 ## Command
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 `
-  -Mode serve `
-  -Target "C:"
+  -Mode clean `
+  -RunId "<run_id>" `
+  -CandidateId "<candidate_id>"
 ```
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\invoke-once.ps1 `
-  -Mode serve `
-  -CsvPath "C:\path\to\wiztree-export.csv"
+  -Mode clean `
+  -RunId "<run_id>" `
+  -PlanHash "<plan_hash>" `
+  -ApprovalCode "RECYCLE <code>"
 ```
