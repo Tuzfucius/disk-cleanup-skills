@@ -8,11 +8,17 @@
   </head>
   <body>
     <header class="topbar">
-      <div>
+      <section id="approval-notice" class="approval-notice" aria-live="polite">
+        <strong>回收码</strong>
+        <span id="approval-code">生成清理计划后显示</span>
+      </section>
+      <div class="topbar-content">
+        <div>
         <h1>磁盘审计</h1>
         <p id="scan-meta">读取扫描结果中</p>
+        </div>
+        <div class="metric" id="candidate-total">候选项 0</div>
       </div>
-      <div class="metric" id="candidate-total">候选项 0</div>
     </header>
 
     <main class="layout">

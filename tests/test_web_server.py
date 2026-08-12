@@ -41,6 +41,8 @@ def test_audit_server_serves_html_and_tree(tmp_path: Path) -> None:
             html = response.read().decode("utf-8")
         assert "<main" in html
         assert "磁盘审计" in html
+        assert 'id="approval-notice"' in html
+        assert "生成清理计划后显示" in html
 
         base = server.url.split("?")[0].rstrip("/")
         with urlopen(f"{base}/api/tree/children?token=test-token", timeout=5) as response:
