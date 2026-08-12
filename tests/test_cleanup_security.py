@@ -163,7 +163,7 @@ def test_session_crash_recovery_moves_plan_to_needs_review(tmp_path: Path, monke
     assert state["state"] == "NEEDS_REVIEW"
 
 
-def test_web_selected_plan_set_persists_approval_without_exposing_it(tmp_path: Path) -> None:
+def test_web_selected_plan_set_returns_approval_code(tmp_path: Path) -> None:
     db_path, ids = build_database(tmp_path)
     result = create_selected_plan_set(
         db_path, 1, ids, run_id="a" * 32, expires_at="2030-01-01T00:00:00+00:00",
@@ -172,5 +172,25 @@ def test_web_selected_plan_set_persists_approval_without_exposing_it(tmp_path: P
     )
     persisted = load_selected_plan_set(tmp_path)
     assert result["state"] == "PLANNED"
-    assert "approval_code" not in result["plans"][0]
+    assert result["plans"][0]["approval_code"].startswith("RECYCLE ")
     assert persisted["plans"][0]["approval_code"].startswith("RECYCLE ")
+
+
+def test_web_selected_plan_set_filters_child_when_parent_is_selected(tmp_path: Path) -> None:
+    db_path, ids = build_database(tmp_path, ("safe_cache", "safe_cache"))
+    parent = tmp_path / "cache-parent"
+    parent.mkdir()
+    child = parent / "child.bin"
+    child.write_bytes(b"cache")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE nodes SET full_path = ?, node_type = 'directory' WHERE id = 1", (str(parent),))
+        conn.execute("UPDATE nodes SET full_path = ?, node_type = 'file' WHERE id = 2", (str(child),))
+
+    result = create_selected_plan_set(
+        db_path, 1, ids, run_id="a" * 32, expires_at="2030-01-01T00:00:00+00:00",
+        allowed_root=str(tmp_path), scan_fingerprint="scan", rule_pack_hash="rules",
+        scan_truncated=False,
+    )
+
+    assert [action["candidate_id"] for action in result["plans"][0]["actions"]] == [ids[0]]
+    assert result["automatically_filtered_candidate_ids"] == [ids[1]]

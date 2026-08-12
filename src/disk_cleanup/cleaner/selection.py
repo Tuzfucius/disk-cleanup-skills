@@ -25,9 +25,9 @@ def create_selected_plan_set(
     rule_pack_hash: str,
     scan_truncated: bool,
 ) -> dict[str, Any]:
-    """Persist one or two immutable plans selected from the local report."""
+    """Persist one immutable plan selected from the local report."""
     rows = _selected_rows(db_path, scan_id, candidate_ids)
-    _reject_overlapping_paths(rows)
+    rows, automatically_filtered_candidate_ids = _filter_overlapping_rows(rows)
     by_risk: dict[str, list[str]] = {}
     for row in rows:
         risk = str(row["risk"])
@@ -35,17 +35,16 @@ def create_selected_plan_set(
             raise CleanupPlanError("仅可将绿色或黄色可执行候选项加入清理计划")
         by_risk.setdefault(risk, []).append(str(row["candidate_id"]))
 
-    plans: list[CleanupPlan] = []
-    for risk in ("safe_cache", "safe_redownload"):
-        ids = by_risk.get(risk)
-        if ids:
-            plans.append(create_cleanup_plan(
-                db_path, scan_id, ids, run_id=run_id, expires_at=expires_at,
-                allowed_root=allowed_root, scan_fingerprint=scan_fingerprint,
-                rule_pack_hash=rule_pack_hash, scan_truncated=scan_truncated,
-            ))
-    if not plans:
+    if not by_risk:
         raise CleanupPlanError("未选择可执行候选项")
+    if len(by_risk) != 1:
+        raise CleanupPlanError("一次仅能选择一个风险批次")
+    risk, ids = next(iter(by_risk.items()))
+    plan = create_cleanup_plan(
+        db_path, scan_id, ids, run_id=run_id, expires_at=expires_at,
+        allowed_root=allowed_root, scan_fingerprint=scan_fingerprint,
+        rule_pack_hash=rule_pack_hash, scan_truncated=scan_truncated,
+    )
 
     payload = {
         "run_id": run_id,
@@ -58,14 +57,15 @@ def create_selected_plan_set(
                 "risk_batch": plan.risk_batch,
                 "expected_reclaim_bytes": plan.expected_reclaim_bytes,
             }
-            for plan in plans
+            for plan in (plan,)
         ],
     }
     _atomic_json(db_path.parent / SELECTION_PLAN_NAME, payload)
     return {
         "state": "PLANNED",
-        "plans": [plan_to_dict(plan, include_approval_code=False) for plan in plans],
-        "expected_reclaim_bytes": sum(plan.expected_reclaim_bytes for plan in plans),
+        "plans": [plan_to_dict(plan)],
+        "expected_reclaim_bytes": plan.expected_reclaim_bytes,
+        "automatically_filtered_candidate_ids": automatically_filtered_candidate_ids,
     }
 
 
@@ -101,7 +101,7 @@ def _selected_rows(db_path: Path, scan_id: int, candidate_ids: list[str]) -> lis
         placeholders = ",".join("?" for _ in candidate_ids)
         rows = conn.execute(
             f"""
-            SELECT c.candidate_id, c.risk, n.full_path
+            SELECT c.candidate_id, c.risk, n.full_path, n.node_type
             FROM candidates c JOIN nodes n ON n.id = c.node_id
             WHERE c.scan_id = ? AND c.candidate_id IN ({placeholders})
             """,
@@ -110,6 +110,30 @@ def _selected_rows(db_path: Path, scan_id: int, candidate_ids: list[str]) -> lis
     if len({str(row["candidate_id"]) for row in rows}) != len(set(candidate_ids)):
         raise CleanupPlanError("包含未知 candidate_id")
     return rows
+
+
+def _filter_overlapping_rows(rows: list[sqlite3.Row]) -> tuple[list[sqlite3.Row], list[str]]:
+    """Keep parent directories and discard selected descendants or duplicates."""
+    accepted: list[sqlite3.Row] = []
+    filtered: list[str] = []
+    paths: set[str] = set()
+    for row in sorted(rows, key=lambda value: (len(_normalized_row_path(value)), str(value["candidate_id"]))):
+        path = _normalized_row_path(row)
+        parent_selected = any(
+            str(parent["node_type"]) == "directory"
+            and path.startswith(_normalized_row_path(parent).rstrip("\\/") + "\\")
+            for parent in accepted
+        )
+        if path in paths or parent_selected:
+            filtered.append(str(row["candidate_id"]))
+            continue
+        accepted.append(row)
+        paths.add(path)
+    return accepted, filtered
+
+
+def _normalized_row_path(row: sqlite3.Row) -> str:
+    return ntpath.normcase(ntpath.normpath(str(row["full_path"])))
 
 
 def _reject_overlapping_paths(rows: list[sqlite3.Row]) -> None:

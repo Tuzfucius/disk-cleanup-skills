@@ -6,6 +6,9 @@ if (token) {
 let selected = new Set();
 let runId = "";
 let selectedRisk = "";
+const candidatesById = new Map();
+const checkboxesById = new Map();
+const itemsById = new Map();
 let chartData = { top_directories: [], extension_summary: [] };
 let chartMode = localStorage.getItem("disk-cleanup-chart-mode") || "directories";
 let chartLimit = Number(localStorage.getItem("disk-cleanup-chart-limit") || "10");
@@ -76,6 +79,7 @@ function renderChart() {
   const container = document.getElementById("chart");
   container.innerHTML = "";
   for (const row of rows) {
+    candidatesById.set(row.candidate_id, row);
     const bytes = Number(row.subtree_allocated_bytes || row.allocated_bytes || 0);
     const item = document.createElement("div");
     item.className = "bar-row";
@@ -166,19 +170,13 @@ async function loadCandidates() {
     checkbox.type = "checkbox";
     checkbox.value = row.candidate_id;
     checkbox.disabled = !["safe_cache", "safe_redownload"].includes(row.risk);
+    checkboxesById.set(row.candidate_id, checkbox);
+    itemsById.set(row.candidate_id, item);
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) {
-        if (selectedRisk && selectedRisk !== row.risk) {
-          checkbox.checked = false;
-          return;
-        }
-        selectedRisk = row.risk;
-        selected.add(row.candidate_id);
-        item.classList.add("selected");
+        selectCandidate(row);
       } else {
-        selected.delete(row.candidate_id);
-        item.classList.remove("selected");
-        if (selected.size === 0) selectedRisk = "";
+        deselectCandidate(row.candidate_id);
       }
       renderSelection();
     });
@@ -203,6 +201,41 @@ async function loadCandidates() {
   }
 }
 
+function normalizedPath(path) {
+  return String(path || "").replace(/\//g, "\\").replace(/[\\/]+$/, "").toLowerCase();
+}
+
+function isParentDirectory(parent, child) {
+  return parent.node_type === "directory" && normalizedPath(child.full_path).startsWith(`${normalizedPath(parent.full_path)}\\`);
+}
+
+function deselectCandidate(candidateId) {
+  selected.delete(candidateId);
+  const checkbox = checkboxesById.get(candidateId);
+  const item = itemsById.get(candidateId);
+  if (checkbox) checkbox.checked = false;
+  if (item) item.classList.remove("selected");
+  if (selected.size === 0) selectedRisk = "";
+}
+
+function selectCandidate(row) {
+  if (selectedRisk && selectedRisk !== row.risk) {
+    for (const candidateId of [...selected]) deselectCandidate(candidateId);
+  }
+  const selectedRows = [...selected].map((candidateId) => candidatesById.get(candidateId));
+  if (selectedRows.some((candidate) => isParentDirectory(candidate, row))) {
+    checkboxesById.get(row.candidate_id).checked = false;
+    return;
+  }
+  for (const candidate of selectedRows) {
+    if (isParentDirectory(row, candidate)) deselectCandidate(candidate.candidate_id);
+  }
+  selectedRisk = row.risk;
+  selected.add(row.candidate_id);
+  checkboxesById.get(row.candidate_id).checked = true;
+  itemsById.get(row.candidate_id).classList.add("selected");
+}
+
 function renderSelection() {
   const output = document.getElementById("cleanup-output");
   const ids = [...selected];
@@ -221,11 +254,14 @@ document.getElementById("plan-button").addEventListener("click", async () => {
   button.disabled = true;
   try {
     const result = await post("/api/plans", { candidate_ids: [...selected] });
+    for (const candidateId of result.automatically_filtered_candidate_ids || []) deselectCandidate(candidateId);
     const lines = result.plans.flatMap((plan) => [
       `${plan.risk_batch} · ${formatBytes(plan.expected_reclaim_bytes)}`,
       ...plan.actions.map((action) => action.path),
       `计划哈希: ${plan.plan_hash}`,
     ]);
+    const plan = result.plans[0];
+    text("approval-code", `${plan.risk_batch} | ${plan.plan_hash} | ${plan.approval_code}`);
     output.textContent = `${lines.join("\n")}\n\n请在新一轮对话中说：执行删除勾选内容`;
     document.getElementById("copy-button").disabled = false;
   } catch (error) {
